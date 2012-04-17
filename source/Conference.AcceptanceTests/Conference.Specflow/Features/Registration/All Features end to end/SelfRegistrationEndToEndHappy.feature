@@ -1,10 +1,10 @@
 ﻿Feature: Self Registrant end to end scenario for making a Registration for a Conference site (happy path)
 	In order to register for a conference
 	As an Attendee
-	I want to be able to register for the conference, pay for the Registration Order and associate myself with the paid Order automatically
+	I want to be able to register and pay for a conference so that I can reserve spots at the conference
 
 Background: 
-	Given the 'CQRS summit 2012 conference' site conference
+	Given that 'CQRS summit 2012 conference' is the site conference
 	And the following seating types and prices
 	| seat type                        | rate |
 	| General admission                | $199 |
@@ -14,46 +14,43 @@ Background:
 	| seat type                 | quantity |
 	| General admission         | 1        |
 	| Additional cocktail party | 1        |
-	And the Promotional Codes
+	And the following Promotional Codes
 	| Promotional Code | Discount | Quota     | Scope                     | Cumulative |
 	| COPRESENTER      | 10%      | Unlimited | Additional cocktail party | Exclusive  |
 
 Scenario: Making a reservation
-	When the Registrant confirms an order
-	Then all order items should be confirmed
+	When the Registrant makes a reservation for an order
+	Then all items on the order should be confirmed
+	And the order should show an adjustment of $-5
 	And the order total should be $224
-	And the countdown should be active
+	And the countdown should be active 
 
-
+# checkout scenarios could belong in a different feature
 Scenario: Checkout:Registrant Details
-	Given the Registrant enter these details
+	Given the following registrant
 	| First name | Last name | email address         |
-	| John       | Smith     | johnsmith@contoso.com |
-	And the Registrant details are valid
-	# valid = non-empty, email address is valid as per email conventional verification
-	When the Registrant proceed to Checkout:Payment
-	Then the payment options shoule be offered
-	And the countdown has decreased within the allowed timeslot for holding the Reservation
+	| John       | Smith     | johnsmith@contoso.com |	
+	When the Registrant begins the payment process for an order
+	And the order reservation countdown has not expired
+	Then the registrant should be able to enter a payment
 
-Scenario: Checkout:Payment and sucessfull Order completed
-	Given Checkout:Registrant Details completed
-	And the countdown has decreased within the allowed timeslot for holding the Reservation
-	And the Registrant select one of the offered payment options
-	When the Registrant proceed to confirm the payment
-    Then a receipt will be received from the payment provider indicating success with some transaction id
+Scenario: Checkout:Payment and successful Order completed
+	Given the registrant has entered details for payment of an order
+	And the order reservation countdown has not expired	
+	When the Registrant enters a payment for processing
+	Then a receipt indicating successful processing of payment should be created
 	And a Registration confirmation with the Access code should be displayed
-	And an email with the Access Code will be send to the registered email. 
+	And the registrant should receive an email containing the receipt and access code 
 
 
 Scenario: AllocateSeats
-Given the ConfirmSuccessfulRegistration for the selected Order Items
-And the Order Access code is 6789
-And the Registrant assign the purchased seats to attendees as following
+Given a succesfully confirmed order with an Order Access Code of 6789
+When the Registrant assigns purchased seats to attendees as below
 	| First name | Last name | email address         | Seat type                 |
 	| John       | Smith     | johnsmith@contoso.com | General admission         |
 	| John       | Smith     | johnsmith@contoso.com | Additional cocktail party |
-Then the Regsitrant should be get a Seat Assignment confirmation
-And the Attendees should get an email informing about the conference and the Seat Type with Seat Access Code
+Then the Registrant should receive message confirming the assignments
+And the assigned Attendees should receive an email containing the following information
 	| Access code | email address         | Seat type                 |
 	| 6789-1      | johnsmith@contoso.com | General admission         |
 	| 6789-2      | johnsmith@contoso.com | Additional cocktail party |
