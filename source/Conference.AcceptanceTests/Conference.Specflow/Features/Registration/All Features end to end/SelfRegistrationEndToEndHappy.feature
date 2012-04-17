@@ -18,13 +18,11 @@ Background:
 	| Promotional Code | Discount | Quota     | Scope                     | Cumulative |
 	| COPRESENTER      | 10%      | Unlimited | Additional cocktail party | Exclusive  |
 
-Scenario: Make a reservation with the selected Order Items
-	Given the Registrant apply the 'COPRESENTER' Promotional Code
-	And the 'COPRESENTER' Coupon item should show a value of -$5
-	When the Registrant proceed to make the Reservation	for the selected Order Items		
-	Then the Reservation is confirmed for all the selected Order Items
-	And the total should read $244
-	And the countdown started
+Scenario: Making a reservation
+	When the Registrant confirms an order
+	Then all order items should be confirmed
+	And the order total should be $224
+	And the countdown should be active
 
 
 Scenario: Checkout:Registrant Details
