@@ -59,6 +59,9 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="Microsoft.VisualStudio.QualityTools.UnitTestFramework, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL" />
+    <Reference Include="nunit.framework">
+      <HintPath>..\packages\NUnit.2.6.0.12054\lib\nunit.framework.dll</HintPath>
+    </Reference>
     <Reference Include="Registration">
       <HintPath>..\..\Conference\Registration\bin\Debug\Registration.dll</HintPath>
     </Reference>
@@ -224,6 +227,10 @@
     <ProjectReference Include="..\..\Conference\Conference.Web.Public\Conference.Web.Public.csproj">
       <Project>{32E3E4D7-D887-4BE1-A84F-130BF80533D0}</Project>
       <Name>Conference.Web.Public</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Conference\Conference\Conference.csproj">
+      <Project>{DACB93E1-1015-4D08-ABF5-D41C74F526DC}</Project>
+      <Name>Conference</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>

@@ -6,17 +6,21 @@
 Background: 
 	Given that 'CQRS summit 2012 conference' is the site conference
 	And the following seating types and prices
-	| seat type                        | rate |
+	| SeatType                         | Rate |
 	| General admission                | $199 |
 	| Pre-con Workshop with Greg Young | $500 |
-	| Additional cocktail party		   | $50  |	
+	| Additional cocktail party        | $50  |	
 	And the following Order Items
-	| seat type                 | quantity |
+	| SeatType                 | quantity |
 	| General admission         | 1        |
 	| Additional cocktail party | 1        |
 	And the following Promotional Codes
 	| Promotional Code | Discount | Quota     | Scope                     | Cumulative |
 	| COPRESENTER      | 10%      | Unlimited | Additional cocktail party | Exclusive  |
+	And the following registrant
+	| First name | Last name | email address         |
+	| John       | Smith     | johnsmith@contoso.com |	
+	
 
 Scenario: Making a reservation
 	When the Registrant makes a reservation for an order
@@ -27,12 +31,8 @@ Scenario: Making a reservation
 
 # checkout scenarios could belong in a different feature
 Scenario: Checkout:Registrant Details
-	Given the following registrant
-	| First name | Last name | email address         |
-	| John       | Smith     | johnsmith@contoso.com |	
 	When the Registrant begins the payment process for an order
-	And the order reservation countdown has not expired
-	Then the registrant should be able to enter a payment
+	Then the registrant should be able to enter a payment 
 
 Scenario: Checkout:Payment and successful Order completed
 	Given the registrant has entered details for payment of an order
@@ -49,7 +49,7 @@ When the Registrant assigns purchased seats to attendees as below
 	| First name | Last name | email address         | Seat type                 |
 	| John       | Smith     | johnsmith@contoso.com | General admission         |
 	| John       | Smith     | johnsmith@contoso.com | Additional cocktail party |
-Then the Registrant should receive message confirming the assignments
+Then the Registrant should receive a message confirming the assignments
 And the assigned Attendees should receive an email containing the following information
 	| Access code | email address         | Seat type                 |
 	| 6789-1      | johnsmith@contoso.com | General admission         |
