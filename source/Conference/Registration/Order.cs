@@ -137,9 +137,14 @@ namespace Registration
         {
         }
 
-        private static List<SeatQuantity> ConvertItems(IEnumerable<OrderItem> items)
+        public static List<SeatQuantity> ConvertItems(IEnumerable<OrderItem> items)
         {
             return items.Select(x => new SeatQuantity(x.SeatType, x.Quantity)).ToList();
+        }
+
+        public static List<OrderItem> ConvertItems(IEnumerable<SeatQuantity> items)
+        {
+            return items.Select(x => new OrderItem(x.SeatType, x.Quantity)).ToList();
         }
     }
 }

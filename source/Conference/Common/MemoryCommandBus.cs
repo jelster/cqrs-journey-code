@@ -53,14 +53,15 @@ namespace Common
                 foreach (dynamic handler in this.handlers
                     .Where(x => handlerType.IsAssignableFrom(x.GetType())))
                 {
-                    handler.Handle((dynamic)command.Body);
+                    var bodyObj = command.Body as dynamic;
+                    handler.Handle(bodyObj);
                 }
             });
         }
 
-        public void Send(IEnumerable<Envelope<ICommand>> commands)
+        public void Send(IEnumerable<Envelope<ICommand>> commandsToSend)
         {
-            foreach (var command in commands)
+            foreach (var command in commandsToSend)
             {
                 this.Send(command);
             }

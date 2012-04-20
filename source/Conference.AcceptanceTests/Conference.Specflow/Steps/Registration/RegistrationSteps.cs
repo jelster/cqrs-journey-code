@@ -2,56 +2,149 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
+using Azure;
+using Azure.Messaging;
+using Common;
+using Microsoft.Practices.Unity;
+using Microsoft.ServiceBus.Messaging;
 using Registration;
+using Registration.Commands;
 using Registration.Events;
+using Registration.Handlers;
 using Registration.ReadModel;
 using TechTalk.SpecFlow;
+using TechTalk.SpecFlow.Assist;
 using Xunit;
-using Xunit.Sdk;
+using Moq;
 
 namespace Conference.Specflow.Steps.Registration
 {
     [Binding]
     public class RegistrationSteps
     {
-        private Registrant registrant;
-        private Order order;
-        private ConferenceDTO conference;
-        
-        [Given(@"that '(.*)' is the site conference")]
-        public void GivenAConferenceNamed(string conferenceName)
+        private AssignRegistrantDetails registrant;
+        private OrderViewModelGenerator orderViewModelGenerator;
+        private RegisterToConference conferenceRegistration;
+        private SetOrderPaymentDetails paymentDetails;
+
+        private Order order { get; set; }
+
+
+        private ConferenceInfo conference;
+        private MemoryCommandBus commandBus;
+        private MemoryEventBus eventBus;
+        private readonly RegistrationProcess registrationProcess = new RegistrationProcess();
+        private RegistrationProcessRouter registrationProcessRouter;
+        private OrderCommandHandler orderCommandHandler;
+         
+ 
+        private IRepository<Order> orderRepos;
+        private IProcessRepository processRepo;
+      
+        private IViewRepository viewRepo;
+        private MockRepository mre;
+
+        [BeforeScenario]
+        public void SetupScenario()
         {
-            conference = new ConferenceDTO(Guid.NewGuid(), "AAA", conferenceName, string.Empty, Enumerable.Empty<ConferenceSeatTypeDTO>());
-            order = new Order(Guid.NewGuid(), conference.Id, Enumerable.Empty<OrderItem>());
+            conference = new ConferenceInfo()
+                             {
+                                 Id = Guid.NewGuid(),
+                                 OwnerEmail = "owner@email.com",
+                                 OwnerName = "Conference.SpecFlow"
+                             };
+
+            CreateAndSetupMocks();
+
+            RegisterLocalInfrastructure();
         }
 
-        [Given(@"the following seating types and prices")]
-        public void GivenTheFollowingSeatingTypesAndPrices(IEnumerable<ConferenceSeatTypeDTO> givenSeatTypes)
+        [After]
+        public void VerifyExpectations()
         {
-            conference.Seats.AddRange(givenSeatTypes);
+            mre.Verify();
         }
 
-        [Given(@"the following Order Items")]
-        public void GivenTheFollowingOrderItems(IEnumerable<OrderItem> orderItems)
+        // TODO: this should be replaced with a less brittle, more standardized init pattern that can be shared with other projects
+        private void RegisterLocalInfrastructure()
         {
-           order.UpdateSeats(orderItems);
+            commandBus.Register(orderCommandHandler);
+            commandBus.Register(registrationProcessRouter);
+            eventBus.Register(registrationProcessRouter);
+        }
+
+        private void CreateAndSetupMocks()
+        {
+            mre = new MockRepository(MockBehavior.Loose) { DefaultValue = DefaultValue.Mock, CallBase = true};
+
+            var orderReposMock = mre.Create<IRepository<Order>>();
+            orderReposMock
+                .Setup(x => x.Save(It.IsAny<Order>()))
+                .Callback<Order>(o => order = o)
+                .Verifiable();
+
+            orderReposMock
+                .Setup(x => x.Find(It.IsAny<Guid>()))
+                .Returns(order).Verifiable();
+
+            orderRepos = orderReposMock.Object;
+
+            var repoMock = mre.Create<IProcessRepository>();
+            var processRef = registrationProcess;
+            repoMock
+                .Setup(x => x.Query<RegistrationProcess>())
+                .Returns(() => (new[] { processRef }).AsQueryable()).Verifiable();
+
+            repoMock.Setup(x => x.Save(It.IsAny<RegistrationProcess>()))
+                .Callback<RegistrationProcess>(proc => commandBus.Send(registrationProcess.Commands)).Verifiable();
+
+            processRepo = repoMock.Object;
+            registrationProcessRouter = new RegistrationProcessRouter(() => processRepo);
+            orderCommandHandler = new OrderCommandHandler(orderRepos);
+
+            commandBus = new MemoryCommandBus();
+            eventBus = new MemoryEventBus();
+        }
+
+        [Given(@"that '(.*)' is the site conference having the following.*")]
+        public void GivenAConference(string conferenceName, IEnumerable<SeatInfo> givenSeatTypes)
+        {
+            conference.Name = conferenceName;
+            conference.SeatInfos = givenSeatTypes.ToList();
+        }
+
+        [Given(@"the following Order.*")]
+        public void GivenTheFollowingOrderItems(IEnumerable<SeatQuantity> items)
+        {
+            conferenceRegistration = new RegisterToConference
+            {
+                ConferenceId = conference.Id,
+                OrderId = Guid.NewGuid(),
+                Seats = items.ToList()
+            };
+
+            commandBus.Send(conferenceRegistration); //soonest possible moment we can send this command. If called in wrong order, it should fail messily. Make that explicit?
         }
 
         [Given(@"the following registrant")]
         public void GivenARegistrant(Table table)
         {
-            registrant = new Registrant
-                             {
-                                 FirstName = table.Rows[0][0], 
-                                 LastName = table.Rows[0][1], 
-                                 Email = table.Rows[0][2]
-                             };
+            registrant = table.CreateInstance(() => new AssignRegistrantDetails {OrderId = conferenceRegistration.OrderId});
+            conference.OwnerName = string.Format("{1}, {0}", registrant.FirstName, registrant.LastName);
+            conference.OwnerEmail = registrant.Email;
+            commandBus.Send(registrant);
         }
 
         [Given(@"the registrant has entered details for payment of an order")]
         public void GivenTheRegistrantHasEnteredDetailsForPaymentOfAnOrder()
         {
-            WhenTheRegistrantBeginsThePaymentProcessForAnOrder();
+            var cmd = new SetOrderPaymentDetails 
+            {
+                OrderId = conferenceRegistration.OrderId, 
+                PaymentInformation = "test payment info"
+            };
+            commandBus.Send(cmd);
         }
 
         [Given(@"a succesfully confirmed order with an Order Access Code of (\d+)")]
@@ -63,25 +156,25 @@ namespace Conference.Specflow.Steps.Registration
         [When(@"the Registrant makes a reservation for an order")]
         public void WhenTheRegistrantMakesAReservationForAnOrder()
         {
-            order.MarkAsReserved(DateTime.UtcNow.AddSeconds(120), order.Items.Select(x => new SeatQuantity(x.SeatType, x.Quantity)));
-        }
+            var cmd = new MakeSeatReservation
+                          {
+                              ConferenceId = conferenceRegistration.Id, 
+                              Seats = conferenceRegistration.Seats.ToList()
+                          };
 
-        [When(@"the Registrant assigns purchased seats to attendees as below")]
-        public void WhenTheRegistrantAssignsPurchasedSeatsToAttendeesAsBelow(Table table)
-        {
-            ScenarioContext.Current.Pending();
+            commandBus.Send(cmd);
         }
 
         [When(@"the Registrant confirms an order")]
         public void WhenTheRegistrantConfirmsAnOrder()
         {
-            order.ConfirmPayment();
+            var cmd = new ConfirmOrderPayment() {OrderId = order.Id};
+            commandBus.Send(cmd);
         }
 
         [When(@"the Registrant begins the payment process for an order")]
         public void WhenTheRegistrantBeginsThePaymentProcessForAnOrder()
         {
-            order.AssignRegistrant(registrant.FirstName, registrant.LastName, registrant.Email);
             WhenTheRegistrantMakesAReservationForAnOrder();
         }
 
@@ -92,22 +185,23 @@ namespace Conference.Specflow.Steps.Registration
             WhenTheRegistrantConfirmsAnOrder();
         }
 
+        [When(@"the Registrant assigns purchased seats to attendees as below")]
+        public void WhenTheRegistrantAssignsPurchasedSeatsToAttendeesAsBelow(Table table)
+        {
+            ScenarioContext.Current.Pending();
+        }
+
         [StepDefinition(@"the order reservation countdown has not expired")]
         public void TheOrderReservationCountdownHasNotExpired()
         {
-            Assert.True(order.ReservationExpirationDate > DateTime.UtcNow);
+            var ord = orderRepos.Find(conferenceRegistration.OrderId);
+            Assert.False(ord.Events.OfType<OrderExpired>().Any());
         }
 
         [Then(@"all order items should be confirmed")]
         public void ThenAllOrderItemsShouldBeConfirmed()
         {
-            Assert.True(order.State == Order.States.Confirmed);
-        }
-
-        [Then(@"the order total should be \$(\d+)")]
-        public void ThenTheOrderTotalShouldBe(decimal totalAmount)
-        {
-            ScenarioContext.Current.Pending();
+            Assert.True(order.Events.OfType<OrderReservationCompleted>().Any());
         }
 
         [Then(@"the countdown should be active")]
@@ -119,18 +213,31 @@ namespace Conference.Specflow.Steps.Registration
         [Then(@"the registrant should be able to enter a payment")]
         public void TheRegistrantShouldBeAbleToEnterAPayment()
         {
-           Assert.True(order.Events.OfType<OrderRegistrantAssigned>().Any());
+           var process = processRepo.Find<RegistrationProcess>(conferenceRegistration.OrderId);
+           Assert.True(process.State == RegistrationProcess.ProcessState.AwaitingPayment);
         }
 
         [Then(@"a receipt indicating successful processing of payment should be created")]
         public void ThenAReceiptIndicatingSuccessfulProcessingOfPaymentShouldBeCreated()
         {
             Assert.True(order.Events.OfType<OrderReservationCompleted>().Any());
-            Assert.True(order.State == Order.States.Confirmed);
+            Assert.True(order.Events.OfType<OrderPaymentConfirmed>().Any());
+        }
+
+        [Then(@"all items on the order should be confirmed")]
+        public void ThenAllItemsOnTheOrderShouldBeConfirmed()
+        {
+            Assert.True(order.Events.OfType<OrderReservationCompleted>().Any());
         }
 
         [Then(@"a Registration confirmation with the Access code should be displayed")]
         public void ThenARegistrationConfirmationWithTheAccessCodeShouldBeDisplayed()
+        {
+           ScenarioContext.Current.Pending();
+        }
+
+        [Then(@"the order total should be \$(\d+)")]
+        public void ThenTheOrderTotalShouldBe(decimal totalAmount)
         {
             ScenarioContext.Current.Pending();
         }
@@ -153,12 +260,6 @@ namespace Conference.Specflow.Steps.Registration
             ScenarioContext.Current.Pending();
         }
 
-        [Then(@"all items on the order should be confirmed")]
-        public void ThenAllItemsOnTheOrderShouldBeConfirmed()
-        {
-            Assert.True(order.Events.OfType<OrderReservationCompleted>().Any());
-        }
-
         [Then(@"the order should show an adjustment of \$([\-?]\d+)")]
         public void ThenTheOrderShouldShowAnAdjustmentOf(decimal adjustment)
         {
@@ -166,19 +267,15 @@ namespace Conference.Specflow.Steps.Registration
         }
 
         [StepArgumentTransformation(@"following order items")]
-        public IEnumerable<OrderItem> OrderItemStepTransformer(Table table)
+        public IEnumerable<SeatQuantity> SeatQuantityStepTransformer(Table table)
         {
-            var inter = table.Rows.Select(x => new OrderItem(conference.Seats
-                .Where(conf => conf.Description.ToLower() == x[0].ToLower())
-                .Select(guid => guid.Id).First(), Convert.ToInt32(x[1])));
-            return inter;
+            return table.CreateSet(() => new SeatQuantity(Guid.Empty, 0));
         }
 
-        [StepArgumentTransformation(@"following [seat|ing]+ types")]
-        public IEnumerable<ConferenceSeatTypeDTO> SeatTypeTransformer(Table table)
+        [StepArgumentTransformation(@"following [seat|ing]+ types, prices, and availability")]
+        public IEnumerable<SeatInfo> SeatTypeTransformer(Table table)
         {
-            return table.Rows.Select(tableRow => 
-                new ConferenceSeatTypeDTO(Guid.NewGuid(), tableRow["SeatType"], Convert.ToDouble(tableRow["Rate"].Replace(CultureInfo.CurrentCulture.NumberFormat.CurrencySymbol, ""))));
+            return table.CreateSet<SeatInfo>();
         }
 
         [StepArgumentTransformation(@"\$(\w+)")]
@@ -187,6 +284,14 @@ namespace Conference.Specflow.Steps.Registration
             return decimal.Parse(input);
         }
 
+        private void SetupRegistrationContext()
+        {
+            Assert.NotNull(conferenceRegistration);
+            Assert.NotNull(registrant);
+
+            
+
+        }
 
     }
 }

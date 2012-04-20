@@ -4,21 +4,20 @@
 	I want to be able to register and pay for a conference so that I can reserve spots at the conference
 
 Background: 
-	Given that 'CQRS summit 2012 conference' is the site conference
-	And the following seating types and prices
+	Given that 'CQRS summit 2012 conference' is the site conference having the following seating types, prices, and availability
 	| SeatType                         | Rate |
 	| General admission                | $199 |
 	| Pre-con Workshop with Greg Young | $500 |
-	| Additional cocktail party        | $50  |	
-	And the following Order Items
-	| SeatType                 | quantity |
+	| Additional cocktail party        | $50  |
+	And the following Order
+	| SeatType                 | Quantity |
 	| General admission         | 1        |
 	| Additional cocktail party | 1        |
 	And the following Promotional Codes
 	| Promotional Code | Discount | Quota     | Scope                     | Cumulative |
 	| COPRESENTER      | 10%      | Unlimited | Additional cocktail party | Exclusive  |
 	And the following registrant
-	| First name | Last name | email address         |
+	| FirstName | LastName | EmailAddress         |
 	| John       | Smith     | johnsmith@contoso.com |	
 	
 
