@@ -5,10 +5,10 @@
 
 Background: 
 	Given that 'CQRS summit 2012 conference' is the site conference having the following seating types, prices, and availability
-	| SeatType                         | Rate |
-	| General admission                | $199 |
-	| Pre-con Workshop with Greg Young | $500 |
-	| Additional cocktail party        | $50  |
+	| Name                             | Price | Quantity |
+	| General admission                | $199  | 10       |
+	| Pre-con Workshop with Greg Young | $500  | 10       |
+	| Additional cocktail party        | $50   | 10       |
 	And the following Order
 	| SeatType                 | Quantity |
 	| General admission         | 1        |
@@ -17,29 +17,29 @@ Background:
 	| Promotional Code | Discount | Quota     | Scope                     | Cumulative |
 	| COPRESENTER      | 10%      | Unlimited | Additional cocktail party | Exclusive  |
 	And the following registrant
-	| FirstName | LastName | EmailAddress         |
-	| John       | Smith     | johnsmith@contoso.com |	
+	| FirstName | LastName | Email                 |
+	| John      | Smith    | johnsmith@contoso.com |
+	And the registrant makes a reservation for an order	
 	
 
-Scenario: Making a reservation
-	When the Registrant makes a reservation for an order
+Scenario: Making a reservation	 
 	Then all items on the order should be confirmed
 	And the order should show an adjustment of $-5
 	And the order total should be $224
 	And the countdown should be active 
 
 # checkout scenarios could belong in a different feature
-Scenario: Checkout:Registrant Details
-	When the Registrant begins the payment process for an order
+Scenario: Checkout:Registrant Details	 
+	Given the registrant has entered details for payment of the order
+	When the Registrant begins the payment process for the order
 	Then the registrant should be able to enter a payment 
 
-Scenario: Checkout:Payment and successful Order completed
-	Given the registrant has entered details for payment of an order
-	And the order reservation countdown has not expired	
+Scenario: Checkout:Payment and successful Order completed	
 	When the Registrant enters a payment for processing
 	Then a receipt indicating successful processing of payment should be created
 	And a Registration confirmation with the Access code should be displayed
 	And the registrant should receive an email containing the receipt and access code 
+	And the order reservation countdown has not expired
 
 
 Scenario: AllocateSeats

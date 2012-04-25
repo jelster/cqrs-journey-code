@@ -60,6 +60,9 @@
     <Compile Include="BinarySerializer.cs" />
     <Compile Include="CollectionExtensions.cs" />
     <Compile Include="CommandBusExtensions.cs" />
+    <Compile Include="IRepository.cs">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="IVersionedEvent.cs" />
     <Compile Include="IDataContext.cs" />
     <Compile Include="Envelope.cs" />
@@ -75,8 +78,6 @@
     <Compile Include="IEventHandler.cs" />
     <Compile Include="IEventHandlerRegistry.cs" />
     <Compile Include="IEventPublisher.cs" />
-    <Compile Include="Initialization.cs" />
-    <Compile Include="IRepository.cs" />
     <Compile Include="IEventSourced.cs" />
     <Compile Include="IEventSourcedRepository.cs" />
     <Compile Include="IProcessDataContext.cs" />

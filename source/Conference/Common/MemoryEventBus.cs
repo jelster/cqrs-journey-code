@@ -32,20 +32,21 @@ namespace Common
             this.handlers.Add(handler);
         }
 
+        public void PublishInvoke(IEvent @event)
+        {
+            var handlerType = typeof(IEventHandler<>).MakeGenericType(@event.GetType());
+
+            foreach (dynamic handler in this.handlers.Where(x => handlerType.IsAssignableFrom(x.GetType())))
+            {
+                handler.Handle((dynamic)@event);
+            }
+        }
+
         public void Publish(IEvent @event)
         {
             this.events.Add(@event);
-
-            Task.Factory.StartNew(() =>
-            {
-                var handlerType = typeof(IEventHandler<>).MakeGenericType(@event.GetType());
-
-                foreach (dynamic handler in this.handlers
-                    .Where(x => handlerType.IsAssignableFrom(x.GetType())))
-                {
-                    handler.Handle((dynamic)@event);
-                }
-            });
+            PublishInvoke(@event);
+            //Task.Factory.StartNew(() => PublishInvoke(@event));
         }
 
         public void Publish(IEnumerable<IEvent> events)

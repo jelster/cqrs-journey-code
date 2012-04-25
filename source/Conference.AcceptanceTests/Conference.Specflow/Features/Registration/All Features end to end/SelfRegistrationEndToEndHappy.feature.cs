@@ -70,17 +70,21 @@ namespace Conference.Specflow.Features.Registration.AllFeaturesEndToEnd
 #line 6
 #line hidden
             TechTalk.SpecFlow.Table table1 = new TechTalk.SpecFlow.Table(new string[] {
-                        "SeatType",
-                        "Rate"});
+                        "Name",
+                        "Price",
+                        "Quantity"});
             table1.AddRow(new string[] {
                         "General admission",
-                        "$199"});
+                        "$199",
+                        "10"});
             table1.AddRow(new string[] {
                         "Pre-con Workshop with Greg Young",
-                        "$500"});
+                        "$500",
+                        "10"});
             table1.AddRow(new string[] {
                         "Additional cocktail party",
-                        "$50"});
+                        "$50",
+                        "10"});
 #line 7
  testRunner.Given("that \'CQRS summit 2012 conference\' is the site conference having the following se" +
                     "ating types, prices, and availability", ((string)(null)), table1);
@@ -115,13 +119,15 @@ namespace Conference.Specflow.Features.Registration.AllFeaturesEndToEnd
             TechTalk.SpecFlow.Table table4 = new TechTalk.SpecFlow.Table(new string[] {
                         "FirstName",
                         "LastName",
-                        "EmailAddress"});
+                        "Email"});
             table4.AddRow(new string[] {
                         "John",
                         "Smith",
                         "johnsmith@contoso.com"});
 #line 19
  testRunner.And("the following registrant", ((string)(null)), table4);
+#line 22
+ testRunner.And("the registrant makes a reservation for an order");
 #line hidden
         }
         
@@ -141,12 +147,10 @@ namespace Conference.Specflow.Features.Registration.AllFeaturesEndToEnd
         public virtual void MakingAReservation()
         {
             TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("Making a reservation", ((string[])(null)));
-#line 24
+#line 25
 this.ScenarioSetup(scenarioInfo);
 #line 6
 this.FeatureBackground();
-#line 25
- testRunner.When("the Registrant makes a reservation for an order");
 #line 26
  testRunner.Then("all items on the order should be confirmed");
 #line 27
@@ -171,8 +175,10 @@ this.ScenarioSetup(scenarioInfo);
 #line 6
 this.FeatureBackground();
 #line 33
- testRunner.When("the Registrant begins the payment process for an order");
+ testRunner.Given("the registrant has entered details for payment of the order");
 #line 34
+ testRunner.When("the Registrant begins the payment process for the order");
+#line 35
  testRunner.Then("the registrant should be able to enter a payment");
 #line hidden
             this.ScenarioCleanup();
@@ -185,22 +191,20 @@ this.FeatureBackground();
         public virtual void CheckoutPaymentAndSuccessfulOrderCompleted()
         {
             TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("Checkout:Payment and successful Order completed", ((string[])(null)));
-#line 36
+#line 37
 this.ScenarioSetup(scenarioInfo);
 #line 6
 this.FeatureBackground();
-#line 37
- testRunner.Given("the registrant has entered details for payment of an order");
 #line 38
- testRunner.And("the order reservation countdown has not expired");
-#line 39
  testRunner.When("the Registrant enters a payment for processing");
-#line 40
+#line 39
  testRunner.Then("a receipt indicating successful processing of payment should be created");
-#line 41
+#line 40
  testRunner.And("a Registration confirmation with the Access code should be displayed");
-#line 42
+#line 41
  testRunner.And("the registrant should receive an email containing the receipt and access code");
+#line 42
+ testRunner.And("the order reservation countdown has not expired");
 #line hidden
             this.ScenarioCleanup();
         }

@@ -62,6 +62,11 @@ namespace Registration
             get { return this.commands; }
         }
 
+        public void ClearCommands()
+        {
+            this.commands.Clear();
+        }
+
         public void Handle(OrderPlaced message)
         {
             if (this.State == ProcessState.NotStarted)
@@ -102,6 +107,7 @@ namespace Registration
                 {
                     Delay = expirationTime.Subtract(DateTime.UtcNow).Add(bufferTime),
                 });
+
                 this.AddCommand(new MarkSeatsAsReserved
                 {
                     OrderId = this.OrderId,

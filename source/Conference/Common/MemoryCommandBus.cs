@@ -37,13 +37,9 @@ namespace Common
             this.handlers.Add(handler);
         }
 
-        public void Send(Envelope<ICommand> command)
+        public void SendInvoke(Envelope<ICommand> command)
         {
-            this.commands.Add(command);
-
-            Task.Factory.StartNew(() =>
-            {
-                if (command.Delay > TimeSpan.Zero)
+            if (command.Delay > TimeSpan.Zero)
                 {
                     Thread.Sleep(command.Delay);
                 }
@@ -56,7 +52,13 @@ namespace Common
                     var bodyObj = command.Body as dynamic;
                     handler.Handle(bodyObj);
                 }
-            });
+        }
+
+        public void Send(Envelope<ICommand> command)
+        {
+            this.commands.Add(command);
+            SendInvoke(command);
+            //Task.Factory.StartNew(() => SendInvoke(command));
         }
 
         public void Send(IEnumerable<Envelope<ICommand>> commandsToSend)
