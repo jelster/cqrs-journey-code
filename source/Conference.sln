@@ -61,6 +61,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Conference.Common", "Confer
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Payments", "Payments", "{396F0132-0520-4D16-8EAA-3EC9962D89B0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Conference.Specflow", "Conference.AcceptanceTests\Conference.Specflow\Conference.Specflow.csproj", "{D45A0C04-344A-48F0-98F6-6D27755AA78F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -356,6 +358,21 @@ Global
 		{BAF088F8-3FCB-45EF-A228-6424C34C65CA}.Release|Any CPU.Build.0 = Release|Any CPU
 		{BAF088F8-3FCB-45EF-A228-6424C34C65CA}.Release|Mixed Platforms.ActiveCfg = Release|Any CPU
 		{BAF088F8-3FCB-45EF-A228-6424C34C65CA}.Release|x86.ActiveCfg = Release|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.Debug|Mixed Platforms.ActiveCfg = Debug|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.Debug|Mixed Platforms.Build.0 = Debug|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.DebugLocal|Any CPU.ActiveCfg = DebugLocal|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.DebugLocal|Any CPU.Build.0 = DebugLocal|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.DebugLocal|Mixed Platforms.ActiveCfg = DebugLocal|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.DebugLocal|Mixed Platforms.Build.0 = DebugLocal|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.DebugLocal|x86.ActiveCfg = DebugLocal|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.Release|Mixed Platforms.ActiveCfg = Release|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.Release|Mixed Platforms.Build.0 = Release|Any CPU
+		{D45A0C04-344A-48F0-98F6-6D27755AA78F}.Release|x86.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

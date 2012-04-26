@@ -3,11 +3,16 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Linq.Expressions;
-using Common;
+ 
+using Infrastructure.EventSourcing;
+using Infrastructure.Messaging;
+using Infrastructure.Messaging.InMemory;
+using Infrastructure.Processes;
 using Registration;
 using Registration.Commands;
 using Registration.Events;
 using Registration.Handlers;
+using Registration.ReadModel;
 using TechTalk.SpecFlow;
 using TechTalk.SpecFlow.Assist;
 using Xunit;
@@ -21,48 +26,64 @@ namespace Conference.Specflow.Steps.Registration
     {
         public static T TraceCommand<T>(this T command, Func<T, string> projection) where T : ICommand
         {
-            Debug.WriteLine(projection(command));
+            Debug.WriteLine(FormatDebugText<T>(command, "TraceCommand"));
             return command;
+        }
+
+        public static string FormatDebugText<T>(this ICommand command, string source, Func<T, string> dataSelector = null) where T : ICommand
+        {
+            const string fmt = "{0}*** {1} Trace ***{0}*** {1} ***{0}";
+            return string.Format(fmt, Environment.NewLine,
+                                 string.Format("Command: {0}, Source: {1}, Data: {2}", command.GetType().Name, source, dataSelector == null ? "N/A" : dataSelector((T)command)));
+        }
+
+        public static string FormatDebugText<T>(this Envelope<ICommand> command) where T : ICommand
+        {
+            return FormatDebugText<T>(command.Body, command.Delay.ToString());
         }
     }
 
     [Binding]
     public class RegistrationSteps
     {
+        
+
+        private ConferenceDTO givenConference;
+
+        private readonly List<ConferenceSeatTypeDTO> givenSeats = new List<ConferenceSeatTypeDTO>();
+
+        private OrderDTO givenOrder;
+
+        private readonly List<OrderItemDTO> givenOrderItems = new List<OrderItemDTO>();
+
         private readonly Guid _orderId = Guid.NewGuid();
 
-        private AssignRegistrantDetails givenRegistrant;
-        private RegisterToConference givenConference;
+        private AssignRegistrantDetails assignRegistrantCommand;
 
-        private Order order { get; set; }
+        private RegisterToConference registrationCommand;
+
+        private Order order;
+
         private SeatsAvailability seats = new SeatsAvailability(Guid.NewGuid());
-        private SeatsAvailabilityHandler seatsHandler;
-        private ConferenceInfo conference;
 
-        private RegistrationProcess RegistrationProcess { get; set; }
+        private SeatsAvailabilityHandler seatsHandler;
+
+        private RegistrationProcess registrationProcess;
+
         private OrderCommandHandler orderCommandHandler;
 
         private IEventSourcedRepository<Order> orderRepos;
 
-        private readonly MemoryCommandBus memoryCommandBus = new MemoryCommandBus();
-        private readonly MemoryEventBus memoryEventBus = new MemoryEventBus();
         private MockRepository mre;
-        private RegistrationProcessRouter registrationProcessRouter;
 
-        private readonly List<SeatInfo> givenSeats = new List<SeatInfo>();
-        private readonly List<SeatQuantity> givenOrderItems = new List<SeatQuantity>();
         private IEventSourcedRepository<SeatsAvailability> seatRepos;
+
         private IProcessDataContext<RegistrationProcess> processRepos;
 
         [BeforeScenario]
         public void SetupScenario()
         {
-            conference = new ConferenceInfo()
-                             {
-                                 Id = Guid.NewGuid(),
-                                 OwnerEmail = "owner@email.com",
-                                 OwnerName = "Conference.SpecFlow"
-                             };
+            
            
             CreateAndSetupMocks();
 
@@ -74,14 +95,15 @@ namespace Conference.Specflow.Steps.Registration
         {
             mre.Verify();
         }
-      
+
         // TODO: this should be replaced with a less brittle, more standardized init pattern that can be shared with other projects
+
         private void RegisterLocalInfrastructure()
         {
-            memoryCommandBus.Register(orderCommandHandler);
-            memoryCommandBus.Register(seatsHandler);
-            memoryCommandBus.Register(registrationProcessRouter);
-            memoryEventBus.Register(registrationProcessRouter);
+            //memoryCommandBus.Register(orderCommandHandler);
+            //memoryCommandBus.Register(seatsHandler);
+            //memoryCommandBus.Register(registrationProcessRouter);
+            //memoryEventBus.Register(registrationProcessRouter);
         }
 
         private void CreateAndSetupMocks()
@@ -152,55 +174,45 @@ namespace Conference.Specflow.Steps.Registration
         }
 
         [Given(@"that '(.*)' is the site conference having the following.*")]
-        public void GivenAConference(string conferenceName, IEnumerable<SeatInfo> givenSeatTypes)
+        public void GivenAConference(string conferenceName, IEnumerable<ConferenceSeatTypeDTO> givenSeatTypes)
         {
-            conference.Name = conferenceName;
-             
-            foreach (var s in givenSeatTypes)
+            var seatDto = givenSeatTypes.ToList();
+            givenConference = new ConferenceDTO(Guid.NewGuid(), "AAAA", conferenceName, "Test Conference for acceptance tests", DateTime.UtcNow.AddDays(10), seatDto);
+            givenSeats.Clear();
+            givenSeats.AddRange(seatDto);
+            foreach (var s in seatDto)
             {
-                seats.AddSeats(s.Id, s.Quantity);
-                givenSeats.Add(s);
+                seats.AddSeats(s.Id, 10);
+               
             }
-        }
-
-        private string FormatDebugText<T>(T command, string source, Func<T, string> dataSelector = null)
-        {
-            var fmt = "{0}***Sending Commands from TEST...{0}{1}***{0}";
-            return string.Format(fmt, Environment.NewLine,
-                string.Format("Command: {0}, Source: {1}, Data: {2}", command.GetType().Name, source, dataSelector == null ? "N/A" : dataSelector(command)));
-        }
-
-        private string FormatDebugText(Envelope<ICommand> command)
-        {
-            return FormatDebugText(command.Body, command.Delay.ToString());
         }
 
         [Given(@"an|the following Order.*")]
         public void GivenTheFollowingOrderItems(IEnumerable<SeatQuantity> items)
         {
-            givenConference = new RegisterToConference
+            registrationCommand = new RegisterToConference
             {
                 ConferenceId = conference.Id,
                 OrderId = _orderId,
                 Seats = items.ToList()
             };
 
-            givenOrderItems.AddRange(givenConference.Seats);
-            Debug.WriteLine(FormatDebugText(givenConference, "TEST", 
+            givenOrderItems.AddRange(registrationCommand.Seats);
+            Debug.WriteLine(FormatDebugText(registrationCommand, "TEST", 
                 c => string.Format("Order: {0}, Conference: {1}, Seats: {2}", c.OrderId, c.ConferenceId, c.Seats.Count())));
-            memoryCommandBus.SendInvoke(givenConference);
+            memoryCommandBus.SendInvoke(registrationCommand);
             
         }
 
         [Given(@"the following registrant")]
         public void GivenARegistrant(Table table)
         {
-            givenRegistrant = table.CreateInstance(() => new AssignRegistrantDetails { OrderId = _orderId });
-            conference.OwnerName = string.Format("{1}, {0}", givenRegistrant.FirstName, givenRegistrant.LastName);
-            conference.OwnerEmail = givenRegistrant.Email;
+            assignRegistrantCommand = table.CreateInstance(() => new AssignRegistrantDetails { OrderId = _orderId });
+            conference.OwnerName = string.Format("{1}, {0}", assignRegistrantCommand.FirstName, assignRegistrantCommand.LastName);
+            conference.OwnerEmail = assignRegistrantCommand.Email;
 
-            Debug.WriteLine(FormatDebugText(givenRegistrant, "TEST", x => string.Join(" ", x.Id, x.OrderId, x.FirstName, x.LastName, x.Email)));
-            memoryCommandBus.SendInvoke(givenRegistrant);
+            Debug.WriteLine(FormatDebugText(assignRegistrantCommand, "TEST", x => string.Join(" ", x.Id, x.OrderId, x.FirstName, x.LastName, x.Email)));
+            memoryCommandBus.SendInvoke(assignRegistrantCommand);
         }
 
         [Given(@"the registrant has entered details for payment of the order")]
@@ -210,7 +222,7 @@ namespace Conference.Specflow.Steps.Registration
 
             var cmd = new SetOrderPaymentDetails
             {
-                OrderId = givenConference.OrderId,
+                OrderId = registrationCommand.OrderId,
                 PaymentInformation = "test payment info"
             };
 
@@ -294,8 +306,7 @@ namespace Conference.Specflow.Steps.Registration
         [Then(@"a receipt indicating successful processing of payment should be created")]
         public void ThenAReceiptIndicatingSuccessfulProcessingOfPaymentShouldBeCreated()
         {
-            var process = processRepos.Find(x => x.OrderId == _orderId);
-            Assert.True(process.State == RegistrationProcess.ProcessState.Completed);
+            Assert.True(order.Events.OfType<OrderPaymentConfirmed>().Any());
         }
 
         [Then(@"all items on the order should be confirmed")]
@@ -347,9 +358,10 @@ namespace Conference.Specflow.Steps.Registration
         }
 
         [StepArgumentTransformation(@"following [seat|ing]+ types, prices, and availability")]
-        public IEnumerable<SeatInfo> SeatTypeTransformer(Table table)
+        public IEnumerable<ConferenceSeatTypeDTO> SeatTypeTransformer(Table table)
         {
-            return table.CreateSet<SeatInfo>();
+            var items = table.CreateSet<SeatInfo>();
+            return items.Select(x => new ConferenceSeatTypeDTO(x.Id, x.Name, x.Description, x.Price));
         }
 
         [StepArgumentTransformation(@"\$([0-9]+)")]
@@ -360,8 +372,8 @@ namespace Conference.Specflow.Steps.Registration
 
         private void SetupRegistrationState()
         {
-            Assert.NotNull(givenConference);
-            Assert.NotNull(givenRegistrant);
+            Assert.NotNull(registrationCommand);
+            Assert.NotNull(assignRegistrantCommand);
         }
 
     }
