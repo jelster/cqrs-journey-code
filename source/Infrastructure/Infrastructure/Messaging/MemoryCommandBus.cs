@@ -38,13 +38,9 @@ namespace Infrastructure.Messaging.InMemory
             this.handlers.Add(handler);
         }
 
-        public void Send(Envelope<ICommand> command)
+        public void SendInvoke(Envelope<ICommand> command)
         {
-            this.commands.Add(command);
-
-            Task.Factory.StartNew(() =>
-            {
-                if (command.Delay > TimeSpan.Zero)
+            if (command.Delay > TimeSpan.Zero)
                 {
                     Thread.Sleep(command.Delay);
                 }
@@ -54,14 +50,21 @@ namespace Infrastructure.Messaging.InMemory
                 foreach (dynamic handler in this.handlers
                     .Where(x => handlerType.IsAssignableFrom(x.GetType())))
                 {
-                    handler.Handle((dynamic)command.Body);
+                    var bodyObj = command.Body as dynamic;
+                    handler.Handle(bodyObj);
                 }
-            });
         }
 
-        public void Send(IEnumerable<Envelope<ICommand>> commands)
+        public void Send(Envelope<ICommand> command)
         {
-            foreach (var command in commands)
+            this.commands.Add(command);
+            SendInvoke(command);
+            //Task.Factory.StartNew(() => SendInvoke(command));
+        }
+
+        public void Send(IEnumerable<Envelope<ICommand>> commandsToSend)
+        {
+            foreach (var command in commandsToSend)
             {
                 this.Send(command);
             }

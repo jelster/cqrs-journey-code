@@ -25,6 +25,7 @@ namespace Registration.Commands
         public RegisterToConference()
         {
             this.Seats = new Collection<SeatQuantity>();
+            Id = Guid.NewGuid();
         }
 
         public Guid Id { get; private set; }

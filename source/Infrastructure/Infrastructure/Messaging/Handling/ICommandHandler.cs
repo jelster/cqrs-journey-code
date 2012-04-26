@@ -18,7 +18,7 @@ namespace Infrastructure.Messaging.Handling
 	/// </summary>
 	public interface ICommandHandler { }
 
-	public interface ICommandHandler<T> : ICommandHandler
+	public interface ICommandHandler<in T> : ICommandHandler
 		where T : ICommand
 	{
 		void Handle(T command);
