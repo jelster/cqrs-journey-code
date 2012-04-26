@@ -17,6 +17,15 @@ using Payments.Contracts.Events;
 
 namespace Conference.Specflow.Steps.Registration
 {
+    public static class TraceExtensions
+    {
+        public static T TraceCommand<T>(this T command, Func<T, string> projection) where T : ICommand
+        {
+            Debug.WriteLine(projection(command));
+            return command;
+        }
+    }
+
     [Binding]
     public class RegistrationSteps
     {
@@ -44,8 +53,6 @@ namespace Conference.Specflow.Steps.Registration
         private readonly List<SeatQuantity> givenOrderItems = new List<SeatQuantity>();
         private IEventSourcedRepository<SeatsAvailability> seatRepos;
         private IProcessDataContext<RegistrationProcess> processRepos;
-
-        private Guid _reservationId;
 
         [BeforeScenario]
         public void SetupScenario()
