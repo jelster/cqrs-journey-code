@@ -15,14 +15,12 @@ namespace Registration.Tests
 {
     using System.Linq;
     using Infrastructure.EventSourcing;
-    using Infrastructure.Messaging;
 
     public static class EnumerableEventsExtensions
     {
-        public static TEvent SingleEvent<TEvent> (this IEventSourced aggregate)
-            where TEvent: IEvent
+        public static TEvent SingleEvent<TEvent> (this EventSourced aggregate) where TEvent: IVersionedEvent
         {
-            return (TEvent)aggregate.Events.Single();
+            return aggregate.Events.OfType<TEvent>().Single();
         }
     }
 }

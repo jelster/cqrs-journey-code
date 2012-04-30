@@ -17,8 +17,21 @@ namespace Infrastructure.EventSourcing
 
     public abstract class VersionedEvent : IVersionedEvent
     {
+        public static readonly NullEvent Empty = new NullEvent();
+
+        public class NullEvent : VersionedEvent
+        {
+            public new int Version
+            {
+                get { return -9999; }
+                set { ; }
+            }
+        }
+
         public Guid SourceId { get; set; }
 
         public int Version { get; set; }
     }
+
+
 }

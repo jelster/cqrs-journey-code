@@ -103,7 +103,7 @@ namespace Registration.Tests.OrderFixture
         {
             this.sut.UpdateSeats(new[] { new OrderItem(SeatTypeId, 20) });
 
-            var @event = (OrderUpdated)sut.Events.Single();
+            var @event = sut.Events.OfType<OrderUpdated>().Single();
             Assert.Equal(OrderId, @event.SourceId);
             Assert.Equal(1, @event.Seats.Count());
             Assert.Equal(20, @event.Seats.ElementAt(0).Quantity);
@@ -115,7 +115,7 @@ namespace Registration.Tests.OrderFixture
             var expiration = DateTime.UtcNow.AddMinutes(15);
             this.sut.MarkAsReserved(expiration, new[] { new SeatQuantity(SeatTypeId, 3) });
 
-            var @event = (OrderPartiallyReserved)sut.Events.Single();
+            var @event = sut.Events.OfType<OrderPartiallyReserved>().Single();
             Assert.Equal(OrderId, @event.SourceId);
             Assert.Equal(1, @event.Seats.Count());
             Assert.Equal(3, @event.Seats.ElementAt(0).Quantity);
@@ -128,7 +128,7 @@ namespace Registration.Tests.OrderFixture
             var expiration = DateTime.UtcNow.AddMinutes(15);
             this.sut.MarkAsReserved(expiration, new[] { new SeatQuantity(SeatTypeId, 5) });
 
-            var @event = (OrderReservationCompleted)sut.Events.Last();
+            var @event = sut.Events.OfType<OrderReservationCompleted>().Last();
             Assert.Equal(OrderId, @event.SourceId);
             Assert.Equal(1, @event.Seats.Count());
             Assert.Equal(5, @event.Seats.ElementAt(0).Quantity);
@@ -140,7 +140,7 @@ namespace Registration.Tests.OrderFixture
         {
             this.sut.Expire();
 
-            var @event = (OrderExpired)sut.Events.Single();
+            var @event = sut.Events.OfType<OrderExpired>().Single();
             Assert.Equal(OrderId, @event.SourceId);
         }
 
@@ -149,7 +149,7 @@ namespace Registration.Tests.OrderFixture
         {
             this.sut.AssignRegistrant("foo", "bar", "foo@bar.com");
 
-            var @event = (OrderRegistrantAssigned)sut.Events.Single();
+            var @event = sut.Events.OfType<OrderRegistrantAssigned>().Single();
             Assert.Equal(OrderId, @event.SourceId);
             Assert.Equal("foo", @event.FirstName);
             Assert.Equal("bar", @event.LastName);
@@ -195,7 +195,7 @@ namespace Registration.Tests.OrderFixture
         {
             this.sut.Expire();
 
-            var @event = (OrderExpired)sut.Events.Single();
+            var @event = sut.Events.OfType<OrderExpired>().Single();
             Assert.Equal(OrderId, @event.SourceId);
         }
 
@@ -204,7 +204,7 @@ namespace Registration.Tests.OrderFixture
         {
             this.sut.ConfirmPayment();
 
-            var @event = (OrderPaymentConfirmed)sut.Events.Single();
+            var @event = sut.Events.OfType<OrderPaymentConfirmed>().Single();
             Assert.Equal(OrderId, @event.SourceId);
         }
     }

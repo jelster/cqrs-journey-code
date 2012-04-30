@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and limitations under the License.
 // ==============================================================================================================
 
+using System.Reactive.Linq;
+
 namespace Registration.Tests.ConferenceSeatsAvailabilityFixture
 {
     using System;
@@ -62,8 +64,17 @@ namespace Registration.Tests.ConferenceSeatsAvailabilityFixture
         {
             this.sut.AddSeats(SeatTypeId, 10);
 
-            Assert.Equal(SeatTypeId, ((AvailableSeatsChanged)sut.Events.Single()).Seats.Single().SeatType);
-            Assert.Equal(10, ((AvailableSeatsChanged)sut.Events.Single()).Seats.Single().Quantity);
+            var seatEvent = ExtractSeatEventData();
+            
+            Assert.Equal(SeatTypeId, seatEvent.SeatType);
+            Assert.Equal(10, seatEvent.Quantity);
+        }
+
+        private SeatQuantity ExtractSeatEventData()
+        {
+            var seatEvent =
+                sut.EventStream.OfType<AvailableSeatsChanged>().SelectMany(x => x.Seats, (x, y) => y).Take(1).First();
+            return seatEvent;
         }
 
         [Fact]
@@ -72,10 +83,11 @@ namespace Registration.Tests.ConferenceSeatsAvailabilityFixture
             this.sut.RemoveSeats(SeatTypeId, 5);
 
             this.sut.MakeReservation(Guid.NewGuid(), new[] { new SeatQuantity(SeatTypeId, 10) });
+            var seatEvent = ExtractSeatEventData();
 
-            Assert.Equal(SeatTypeId, sut.Events.OfType<AvailableSeatsChanged>().Last().Seats.Single().SeatType);
-            Assert.Equal(-5, sut.Events.OfType<AvailableSeatsChanged>().Last().Seats.Single().Quantity);
-            Assert.Equal(5, this.sut.Events.OfType<SeatsReserved>().Single().ReservationDetails.ElementAt(0).Quantity);
+            Assert.Equal(SeatTypeId, seatEvent.SeatType);
+            Assert.Equal(-5, seatEvent.Quantity);
+            Assert.Equal(5, this.sut.EventStream.OfType<SeatsReserved>().Select(x => x.ReservationDetails.First()).Take(1).First().Quantity);
         }
 
         [Fact]

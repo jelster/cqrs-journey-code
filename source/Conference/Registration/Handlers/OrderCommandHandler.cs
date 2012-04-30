@@ -26,6 +26,10 @@ namespace Registration.Handlers
     {
         private readonly IEventSourcedRepository<Order> repository;
 
+        public OrderCommandHandler()
+        {
+        }
+
         public OrderCommandHandler(IEventSourcedRepository<Order> repository)
         {
             this.repository = repository;
