@@ -51,7 +51,7 @@ namespace Infrastructure.EventSourcing
         /// Upon subscription, subscribers will be immediately notified of all past events and any future events raised.
         /// For a snapshot collection of events, consider the <seealso cref="Events"/> property.
         /// </summary>
-        public IObservable<IVersionedEvent> EventStream { get { return eventSubject.AsObservable(); } } 
+        public IObservable<IVersionedEvent> EventStream { get { return eventSubject.AsObservable(); } }
 
         /// <summary>
         /// A "Cold" observable - will only produce events that occured before time of invocation. See <see cref="EventStream"/> for a "Hot" observable
@@ -61,6 +61,14 @@ namespace Infrastructure.EventSourcing
             get { return pendingEvents.AsEnumerable(); }
         }
 
+        public IDisposable SyndicateEvent<TEvent>(Action<TEvent> observer) where TEvent : IEvent
+        {
+            var s = eventSubject.OfType<TEvent>().SkipUntil(eventSubject).Publish();
+            s.SubscribeOn(Scheduler.CurrentThread).Subscribe(observer);
+
+            return s.Connect();
+        }
+        
         /// <summary>
         /// Configures a handler for an event. 
         /// </summary>
@@ -93,6 +101,7 @@ namespace Infrastructure.EventSourcing
             pendingEvents.Add(e);
             Apply(e);
         }
+
         private void Apply(IVersionedEvent e, bool notifySubscribers = true)
         {
             this.handlers[e.GetType()].Invoke(e);

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reactive;
 using System.Reactive.Linq;
 using Infrastructure.EventSourcing;
+using Infrastructure.Messaging;
 using Xunit;
 
 
@@ -116,6 +117,25 @@ namespace Infrastructure.Tests
 
             subHandler.Dispose();
             barHandler.Dispose();
+        }
+
+        [Fact]
+        public void when_syndicate_subscribes_after_events_only_notified_of_new_events()
+        {
+            List<IEvent> received = new List<IEvent>();
+            sut.IncrementCounter();
+            sut.GoToTheBar();
+            
+            var sub = sut.SyndicateEvent<FakeEvent>(received.Add);
+
+            sut.IncrementCounter();
+
+            Assert.Equal(1, received.Count);
+            Assert.Equal(2, sut.numberOfFakeEventsRaised);
+            Assert.Equal(1, sut.numberOfBarEventsRaised);
+            
+            sub.Dispose();
+
         }
     }
 

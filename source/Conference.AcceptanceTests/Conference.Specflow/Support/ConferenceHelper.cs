@@ -18,6 +18,7 @@ using System.Threading;
 using Infrastructure.Azure;
 using Infrastructure.Azure.Messaging;
 using Infrastructure.Messaging;
+using Infrastructure.Messaging.InMemory;
 using Infrastructure.Serialization;
 using Newtonsoft.Json;
 using Registration;
