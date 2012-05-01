@@ -24,7 +24,7 @@ Background:
 	| General admission         | $199 |
 	| CQRS Workshop             | $500 |
 	| Additional cocktail party | $50  |
-	And the following Promotional Codes
+	And the Promotional Codes
 	| Promotional Code | Discount | Quota     | Scope                            | Cumulative |
 	| SPEAKER123       | 100%     | Unlimited | All                              |            |
 	| VOLUNTEER        | 100%     | Unlimited | General admission                |            |

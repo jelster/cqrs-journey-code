@@ -14,34 +14,9 @@
 Feature: Self Registrant end to end scenario for making a Registration for a Conference site (happy path)
 	In order to register for a conference
 	As an Attendee
-	I want to be able to register and pay for a conference so that I can reserve spots at the conference
+	I want to be able to register for the conference, pay for the Registration Order and associate myself with the paid Order automatically
 
 Background: 
-<<<<<<< HEAD
-	Given that 'CQRS summit 2012 conference' is the site conference having the following seating types, prices, and availability
-	| Name                             | Price | Quantity |
-	| General admission                | $199  | 10       |
-	| Pre-con Workshop with Greg Young | $500  | 10       |
-	| Additional cocktail party        | $50   | 10       |
-	And the following Order
-	| SeatType                 | Quantity |
-	| General admission         | 1        |
-	| Additional cocktail party | 1        |
-	And the following Promotional Codes
-	| Promotional Code | Discount | Quota     | Scope                     | Cumulative |
-	| COPRESENTER      | 10%      | Unlimited | Additional cocktail party | Exclusive  |
-	And the following registrant
-	| FirstName | LastName | Email                 |
-	| John      | Smith    | johnsmith@contoso.com |
-	And the registrant makes a reservation for an order	
-	
-
-Scenario: Making a reservation	 
-	Then all items on the order should be confirmed
-	And the order should show an adjustment of $-5
-	And the order total should be $224
-	And the countdown should be active 
-=======
 	Given the list of the available Order Items for the CQRS summit 2012 conference with the slug code SelfRegE2Ehappy
 	| seat type                 | rate | quota |
 	| General admission         | $199 | 100   |
@@ -68,23 +43,8 @@ Scenario: Make a reservation with the selected Order Items
 		| CQRS Workshop |
 	And the total should read $249
 	And the countdown started
->>>>>>> dev
 
-# checkout scenarios could belong in a different feature
-Scenario: Checkout:Registrant Details	 
-	Given the registrant has entered details for payment of the order
-	When the Registrant begins the payment process for the order
-	Then the registrant should be able to enter a payment 
 
-<<<<<<< HEAD
-Scenario: Checkout:Payment and successful Order completed	
-	When the Registrant enters a payment for processing
-	Then a receipt indicating successful processing of payment should be created
-	And a Registration confirmation with the Access code should be displayed
-	And the registrant should receive an email containing the receipt and access code 
-	And the order reservation countdown has not expired
-
-=======
 Scenario: Checkout:Registrant Details
 	Given the Registrant proceed to make the Reservation
 	And the Registrant enter these details
@@ -105,23 +65,10 @@ Scenario: Checkout:Payment and sucessfull Order completed
 		| seat type                 | quantity |
 		| General admission         | 1        |
 		| Additional cocktail party | 1        |
->>>>>>> dev
 
 # Next release
 @Ignore
 Scenario: AllocateSeats
-<<<<<<< HEAD
-Given a succesfully confirmed order with an Order Access Code of 6789
-When the Registrant assigns purchased seats to attendees as below
-	| First name | Last name | email address         | Seat type                 |
-	| John       | Smith     | johnsmith@contoso.com | General admission         |
-	| John       | Smith     | johnsmith@contoso.com | Additional cocktail party |
-Then the Registrant should receive a message confirming the assignments
-And the assigned Attendees should receive an email containing the following information
-	| Access code | email address         | Seat type                 |
-	| 6789-1      | johnsmith@contoso.com | General admission         |
-	| 6789-2      | johnsmith@contoso.com | Additional cocktail party |
-=======
 Given the ConfirmSuccessfulRegistration for the selected Order Items
 And the Order Access code is 6789
 And the Registrant assign the purchased seats to attendees as following
@@ -144,4 +91,3 @@ Scenario: Make a reservation with the selected Order Items and a Promo Code
 	Then the Reservation is confirmed for all the selected Order Items
 	And the total should read $244
 	And the countdown started
->>>>>>> dev

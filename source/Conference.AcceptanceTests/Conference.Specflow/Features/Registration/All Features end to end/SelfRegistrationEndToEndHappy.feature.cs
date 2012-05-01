@@ -33,7 +33,8 @@ namespace Conference.Specflow.Features.Registration.AllFeaturesEndToEnd
             testRunner = TechTalk.SpecFlow.TestRunnerManager.GetTestRunner();
             TechTalk.SpecFlow.FeatureInfo featureInfo = new TechTalk.SpecFlow.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Self Registrant end to end scenario for making a Registration for a Conference si" +
                     "te (happy path)", "In order to register for a conference\r\nAs an Attendee\r\nI want to be able to regis" +
-                    "ter and pay for a conference so that I can reserve spots at the conference", ProgrammingLanguage.CSharp, ((string[])(null)));
+                    "ter for the conference, pay for the Registration Order and associate myself with" +
+                    " the paid Order automatically", ProgrammingLanguage.CSharp, ((string[])(null)));
             testRunner.OnFeatureStart(featureInfo);
         }
         
@@ -73,29 +74,6 @@ namespace Conference.Specflow.Features.Registration.AllFeaturesEndToEnd
         
         public virtual void FeatureBackground()
         {
-<<<<<<< HEAD
-#line 6
-#line hidden
-            TechTalk.SpecFlow.Table table1 = new TechTalk.SpecFlow.Table(new string[] {
-                        "Name",
-                        "Price",
-                        "Quantity"});
-            table1.AddRow(new string[] {
-                        "General admission",
-                        "$199",
-                        "10"});
-            table1.AddRow(new string[] {
-                        "Pre-con Workshop with Greg Young",
-                        "$500",
-                        "10"});
-            table1.AddRow(new string[] {
-                        "Additional cocktail party",
-                        "$50",
-                        "10"});
-#line 7
- testRunner.Given("that \'CQRS summit 2012 conference\' is the site conference having the following se" +
-                    "ating types, prices, and availability", ((string)(null)), table1);
-=======
 #line 19
 #line hidden
             TechTalk.SpecFlow.Table table1 = new TechTalk.SpecFlow.Table(new string[] {
@@ -117,52 +95,18 @@ namespace Conference.Specflow.Features.Registration.AllFeaturesEndToEnd
 #line 20
  testRunner.Given("the list of the available Order Items for the CQRS summit 2012 conference with th" +
                     "e slug code SelfRegE2Ehappy", ((string)(null)), table1);
->>>>>>> dev
 #line hidden
             TechTalk.SpecFlow.Table table2 = new TechTalk.SpecFlow.Table(new string[] {
-                        "SeatType",
-                        "Quantity"});
+                        "seat type",
+                        "quantity"});
             table2.AddRow(new string[] {
                         "General admission",
                         "1"});
             table2.AddRow(new string[] {
                         "Additional cocktail party",
                         "1"});
-<<<<<<< HEAD
-#line 12
- testRunner.And("the following Order", ((string)(null)), table2);
-#line hidden
-            TechTalk.SpecFlow.Table table3 = new TechTalk.SpecFlow.Table(new string[] {
-                        "Promotional Code",
-                        "Discount",
-                        "Quota",
-                        "Scope",
-                        "Cumulative"});
-            table3.AddRow(new string[] {
-                        "COPRESENTER",
-                        "10%",
-                        "Unlimited",
-                        "Additional cocktail party",
-                        "Exclusive"});
-#line 16
- testRunner.And("the following Promotional Codes", ((string)(null)), table3);
-#line hidden
-            TechTalk.SpecFlow.Table table4 = new TechTalk.SpecFlow.Table(new string[] {
-                        "FirstName",
-                        "LastName",
-                        "Email"});
-            table4.AddRow(new string[] {
-                        "John",
-                        "Smith",
-                        "johnsmith@contoso.com"});
-#line 19
- testRunner.And("the following registrant", ((string)(null)), table4);
-#line 22
- testRunner.And("the registrant makes a reservation for an order");
-=======
 #line 25
  testRunner.And("the selected Order Items", ((string)(null)), table2);
->>>>>>> dev
 #line hidden
         }
         
@@ -170,31 +114,13 @@ namespace Conference.Specflow.Features.Registration.AllFeaturesEndToEnd
         [Microsoft.VisualStudio.TestTools.UnitTesting.DescriptionAttribute("Make a reservation with the selected Order Items")]
         [Microsoft.VisualStudio.TestTools.UnitTesting.TestPropertyAttribute("FeatureTitle", "Self Registrant end to end scenario for making a Registration for a Conference si" +
             "te (happy path)")]
-<<<<<<< HEAD
-        [Xunit.TraitAttribute("Description", "Making a reservation")]
-        public virtual void MakingAReservation()
-        {
-            TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("Making a reservation", ((string[])(null)));
-#line 25
-=======
         public virtual void MakeAReservationWithTheSelectedOrderItems()
         {
             TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("Make a reservation with the selected Order Items", ((string[])(null)));
 #line 34
->>>>>>> dev
 this.ScenarioSetup(scenarioInfo);
 #line 19
 this.FeatureBackground();
-<<<<<<< HEAD
-#line 26
- testRunner.Then("all items on the order should be confirmed");
-#line 27
- testRunner.And("the order should show an adjustment of $-5");
-#line 28
- testRunner.And("the order total should be $224");
-#line 29
- testRunner.And("the countdown should be active");
-=======
 #line 35
  testRunner.When("the Registrant proceed to make the Reservation");
 #line 36
@@ -219,7 +145,6 @@ this.FeatureBackground();
  testRunner.And("the total should read $249");
 #line 45
  testRunner.And("the countdown started");
->>>>>>> dev
 #line hidden
             this.ScenarioCleanup();
         }
@@ -231,22 +156,10 @@ this.FeatureBackground();
         public virtual void CheckoutRegistrantDetails()
         {
             TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("Checkout:Registrant Details", ((string[])(null)));
-<<<<<<< HEAD
-#line 32
-=======
 #line 48
->>>>>>> dev
 this.ScenarioSetup(scenarioInfo);
 #line 19
 this.FeatureBackground();
-<<<<<<< HEAD
-#line 33
- testRunner.Given("the registrant has entered details for payment of the order");
-#line 34
- testRunner.When("the Registrant begins the payment process for the order");
-#line 35
- testRunner.Then("the registrant should be able to enter a payment");
-=======
 #line 49
  testRunner.Given("the Registrant proceed to make the Reservation");
 #line hidden
@@ -264,7 +177,6 @@ this.FeatureBackground();
  testRunner.When("the Registrant proceed to Checkout:Payment");
 #line 54
  testRunner.Then("the payment options should be offered for a total of $249");
->>>>>>> dev
 #line hidden
             this.ScenarioCleanup();
         }
@@ -273,33 +185,13 @@ this.FeatureBackground();
         [Microsoft.VisualStudio.TestTools.UnitTesting.DescriptionAttribute("Checkout:Payment and sucessfull Order completed")]
         [Microsoft.VisualStudio.TestTools.UnitTesting.TestPropertyAttribute("FeatureTitle", "Self Registrant end to end scenario for making a Registration for a Conference si" +
             "te (happy path)")]
-<<<<<<< HEAD
-        [Xunit.TraitAttribute("Description", "Checkout:Payment and successful Order completed")]
-        public virtual void CheckoutPaymentAndSuccessfulOrderCompleted()
-        {
-            TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("Checkout:Payment and successful Order completed", ((string[])(null)));
-#line 37
-=======
         public virtual void CheckoutPaymentAndSucessfullOrderCompleted()
         {
             TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("Checkout:Payment and sucessfull Order completed", ((string[])(null)));
 #line 56
->>>>>>> dev
 this.ScenarioSetup(scenarioInfo);
 #line 19
 this.FeatureBackground();
-<<<<<<< HEAD
-#line 38
- testRunner.When("the Registrant enters a payment for processing");
-#line 39
- testRunner.Then("a receipt indicating successful processing of payment should be created");
-#line 40
- testRunner.And("a Registration confirmation with the Access code should be displayed");
-#line 41
- testRunner.And("the registrant should receive an email containing the receipt and access code");
-#line 42
- testRunner.And("the order reservation countdown has not expired");
-=======
 #line 57
  testRunner.Given("the Registrant proceed to make the Reservation");
 #line hidden
@@ -332,7 +224,6 @@ this.FeatureBackground();
                         "1"});
 #line 64
  testRunner.And("the Order should be created with the following Order Items", ((string)(null)), table7);
->>>>>>> dev
 #line hidden
             this.ScenarioCleanup();
         }
@@ -344,26 +235,16 @@ this.FeatureBackground();
         [Microsoft.VisualStudio.TestTools.UnitTesting.IgnoreAttribute()]
         public virtual void AllocateSeats()
         {
-<<<<<<< HEAD
-            TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("AllocateSeats", ((string[])(null)));
-#line 45
-=======
             TechTalk.SpecFlow.ScenarioInfo scenarioInfo = new TechTalk.SpecFlow.ScenarioInfo("AllocateSeats", new string[] {
                         "Ignore"});
 #line 71
->>>>>>> dev
 this.ScenarioSetup(scenarioInfo);
 #line 19
 this.FeatureBackground();
-<<<<<<< HEAD
-#line 46
-testRunner.Given("a succesfully confirmed order with an Order Access Code of 6789");
-=======
 #line 72
 testRunner.Given("the ConfirmSuccessfulRegistration for the selected Order Items");
 #line 73
 testRunner.And("the Order Access code is 6789");
->>>>>>> dev
 #line hidden
             TechTalk.SpecFlow.Table table8 = new TechTalk.SpecFlow.Table(new string[] {
                         "First name",
@@ -380,17 +261,10 @@ testRunner.And("the Order Access code is 6789");
                         "Weber",
                         "gregoryweber@contoso.com",
                         "Additional cocktail party"});
-<<<<<<< HEAD
-#line 47
-testRunner.When("the Registrant assigns purchased seats to attendees as below", ((string)(null)), table5);
-#line 51
-testRunner.Then("the Registrant should receive a message confirming the assignments");
-=======
 #line 74
 testRunner.And("the Registrant assign the purchased seats to attendees as following", ((string)(null)), table8);
 #line 78
 testRunner.Then("the Regsitrant should be get a Seat Assignment confirmation");
->>>>>>> dev
 #line hidden
             TechTalk.SpecFlow.Table table9 = new TechTalk.SpecFlow.Table(new string[] {
                         "Access code",
@@ -404,15 +278,9 @@ testRunner.Then("the Regsitrant should be get a Seat Assignment confirmation");
                         "6789-2",
                         "gregoryweber@contoso.com",
                         "Additional cocktail party"});
-<<<<<<< HEAD
-#line 52
-testRunner.And("the assigned Attendees should receive an email containing the following informati" +
-                    "on", ((string)(null)), table6);
-=======
 #line 79
 testRunner.And("the Attendees should get an email informing about the conference and the Seat Typ" +
                     "e with Seat Access Code", ((string)(null)), table9);
->>>>>>> dev
 #line hidden
             this.ScenarioCleanup();
         }

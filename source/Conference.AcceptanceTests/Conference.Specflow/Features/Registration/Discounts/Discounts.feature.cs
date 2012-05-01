@@ -135,7 +135,7 @@ namespace Conference.Specflow.Features.Registration.Discounts
                         "General admission, CQRS Workshop",
                         ""});
 #line 27
- testRunner.And("the following Promotional Codes", ((string)(null)), table2);
+ testRunner.And("the Promotional Codes", ((string)(null)), table2);
 #line hidden
         }
         
