@@ -15,29 +15,30 @@ namespace Registration.Handlers
 {
     using System;
     using System.Collections.Generic;
+    using System.Data.Entity;
     using System.Linq;
-    using Common;
+    using Infrastructure.Messaging.Handling;
     using Registration.Events;
     using Registration.ReadModel;
+    using Registration.ReadModel.Implementation;
 
     public class OrderViewModelGenerator :
         IEventHandler<OrderPlaced>, IEventHandler<OrderUpdated>,
         IEventHandler<OrderPartiallyReserved>, IEventHandler<OrderReservationCompleted>,
         IEventHandler<OrderRegistrantAssigned>
     {
-        private Func<IViewRepository> repositoryFactory;
+        private readonly Func<ConferenceRegistrationDbContext> contextFactory;
 
-        public OrderViewModelGenerator(Func<IViewRepository> repositoryFactory)
+        public OrderViewModelGenerator(Func<ConferenceRegistrationDbContext> contextFactory)
         {
-            this.repositoryFactory = repositoryFactory;
+            this.contextFactory = contextFactory;
         }
 
         public void Handle(OrderPlaced @event)
         {
-            var repository = this.repositoryFactory();
-            using (repository as IDisposable)
+            using (var repository = this.contextFactory.Invoke())
             {
-                var dto = new OrderDTO(@event.OrderId, Order.States.Created)
+                var dto = new OrderDTO(@event.SourceId, OrderDTO.States.Created)
                 {
                     AccessCode = @event.AccessCode,
                 };
@@ -49,10 +50,9 @@ namespace Registration.Handlers
 
         public void Handle(OrderRegistrantAssigned @event)
         {
-            var repository = this.repositoryFactory();
-            using (repository as IDisposable)
+            using (var repository = this.contextFactory.Invoke())
             {
-                var dto = repository.Find<OrderDTO>(@event.OrderId);
+                var dto = repository.Find<OrderDTO>(@event.SourceId);
                 dto.RegistrantEmail = @event.Email;
 
                 repository.Save(dto);
@@ -61,10 +61,9 @@ namespace Registration.Handlers
 
         public void Handle(OrderUpdated @event)
         {
-            var repository = this.repositoryFactory();
-            using (repository as IDisposable)
+            using (var repository = this.contextFactory.Invoke())
             {
-                var dto = repository.Find<OrderDTO>(@event.OrderId);
+                var dto = repository.Find<OrderDTO>(@event.SourceId);
                 dto.Lines.Clear();
                 dto.Lines.AddRange(@event.Seats.Select(seat => new OrderItemDTO(seat.SeatType, seat.Quantity)));
 
@@ -74,20 +73,19 @@ namespace Registration.Handlers
 
         public void Handle(OrderPartiallyReserved @event)
         {
-            this.UpdateReserved(@event.OrderId, @event.ReservationExpiration, Order.States.PartiallyReserved, @event.Seats);
+            this.UpdateReserved(@event.SourceId, @event.ReservationExpiration, OrderDTO.States.PartiallyReserved, @event.Seats);
         }
 
         public void Handle(OrderReservationCompleted @event)
         {
-            this.UpdateReserved(@event.OrderId, @event.ReservationExpiration, Order.States.ReservationCompleted, @event.Seats);
+            this.UpdateReserved(@event.SourceId, @event.ReservationExpiration, OrderDTO.States.ReservationCompleted, @event.Seats);
         }
 
-        private void UpdateReserved(Guid orderId, DateTime reservationExpiration, Order.States state, IEnumerable<SeatQuantity> seats)
+        private void UpdateReserved(Guid orderId, DateTime reservationExpiration, OrderDTO.States state, IEnumerable<SeatQuantity> seats)
         {
-            var repository = this.repositoryFactory();
-            using (repository as IDisposable)
+            using (var repository = this.contextFactory.Invoke())
             {
-                var dto = repository.Find<OrderDTO>(orderId);
+                var dto = repository.Set<OrderDTO>().Include(x => x.Lines).First(x => x.OrderId == orderId);
                 foreach (var seat in seats)
                 {
                     var item = dto.Lines.Single(x => x.SeatType == seat.SeatType);

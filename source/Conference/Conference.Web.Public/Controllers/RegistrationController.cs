@@ -17,45 +17,44 @@ namespace Conference.Web.Public.Controllers
     using System.Linq;
     using System.Threading;
     using System.Web.Mvc;
-    using Common;
     using Conference.Web.Public.Models;
-    using Microsoft.Practices.Unity;
+    using Infrastructure.Messaging;
+    using Payments.Contracts.Commands;
     using Registration.Commands;
     using Registration.ReadModel;
 
     public class RegistrationController : Controller
     {
+        public const string ThirdPartyProcessorPayment = "thirdParty";
+        public const string InvoicePayment = "invoice";
         private const int WaitTimeoutInSeconds = 5;
 
-        private ICommandBus commandBus;
-        private Func<IViewRepository> repositoryFactory;
+        private readonly ICommandBus commandBus;
+        private readonly IOrderDao orderDao;
+        private readonly IConferenceDao conferenceDao;
 
-        public RegistrationController(ICommandBus commandBus, [Dependency("registration")]Func<IViewRepository> repositoryFactory)
+        public RegistrationController(ICommandBus commandBus, IOrderDao orderDao, IConferenceDao conferenceDao)
         {
             this.commandBus = commandBus;
-            this.repositoryFactory = repositoryFactory;
+            this.orderDao = orderDao;
+            this.conferenceDao = conferenceDao;
         }
 
         [HttpGet]
-        public ActionResult StartRegistration(string conferenceCode)
+        [OutputCache(Duration = 0)]
+        public ActionResult StartRegistration()
         {
             ViewBag.OrderId = Guid.NewGuid();
 
-            var repo = this.repositoryFactory.Invoke();
-            using (repo as IDisposable)
-            {
-                // NOTE: If the ConferenceSeatTypeDTO had the ConferenceId property exposed, this query should be simpler. Why do we need to hide the FKs in the read model?
-                var seatTypes = repo.Query<ConferenceDTO>().Where(c => c.Code == conferenceCode).Select(c => c.Seats).FirstOrDefault().ToList();
-                return View(seatTypes);
-            }
+            return View(this.conferenceDao.GetPublishedSeatTypes(this.Conference.Id));
         }
 
         [HttpPost]
-        public ActionResult StartRegistration(string conferenceCode, RegisterToConference command)
+        public ActionResult StartRegistration(RegisterToConference command)
         {
             if (!ModelState.IsValid)
             {
-                return StartRegistration(conferenceCode);
+                return StartRegistration();
             }
 
             // TODO: validate incoming seat types correspond to the conference.
@@ -63,129 +62,171 @@ namespace Conference.Web.Public.Controllers
             command.ConferenceId = this.Conference.Id;
             this.commandBus.Send(command);
 
-            return RedirectToAction("SpecifyRegistrantDetails", new { conferenceCode = conferenceCode, orderId = command.OrderId });
+            return RedirectToAction("SpecifyRegistrantAndPaymentDetails", new { conferenceCode = this.Conference.Code, orderId = command.OrderId });
         }
 
         [HttpGet]
-        public ActionResult SpecifyRegistrantDetails(string conferenceCode, Guid orderId)
+        [OutputCache(Duration = 0)]
+        public ActionResult SpecifyRegistrantAndPaymentDetails(Guid orderId)
         {
-            var orderDTO = this.WaitUntilUpdated(orderId);
-            if (orderDTO == null)
+            var order = this.WaitUntilUpdated(orderId);
+            if (order == null)
             {
                 return View("ReservationUnknown");
             }
 
-            if (orderDTO.State == Registration.Order.States.Rejected)
+            if (order.State == OrderDTO.States.Rejected)
             {
                 return View("ReservationRejected");
             }
 
+            if (order.ReservationExpirationDate.HasValue && order.ReservationExpirationDate < DateTime.UtcNow)
+            {
+                return RedirectToAction("ShowExpiredOrder", new { conferenceCode = this.Conference.Code, orderId = orderId });
+            }
+
+            var orderViewModel = this.CreateViewModel(order);
+
             // NOTE: we use the view bag to pass out of band details needed for the UI.
-            this.ViewBag.ExpirationDateUTC = orderDTO.ReservationExpirationDate;
+            this.ViewBag.ExpirationDateUTC = order.ReservationExpirationDate;
 
             // We just render the command which is later posted back.
-            return View(new AssignRegistrantDetails { OrderId = orderId });
+            return View(
+                new RegistrationViewModel
+                {
+                    RegistrantDetails = new AssignRegistrantDetails { OrderId = orderId },
+                    Order = orderViewModel
+                });
         }
 
         [HttpPost]
-        public ActionResult SpecifyRegistrantDetails(string conferenceCode, AssignRegistrantDetails command)
+        public ActionResult SpecifyRegistrantAndPaymentDetails(AssignRegistrantDetails command, string paymentType)
         {
+            var orderId = command.OrderId;
+
             if (!ModelState.IsValid)
             {
-                return SpecifyRegistrantDetails(conferenceCode, command.OrderId);
+                return SpecifyRegistrantAndPaymentDetails(orderId);
             }
 
-            this.commandBus.Send(command);
+            var order = this.orderDao.GetOrderDetails(orderId);
 
-            return RedirectToAction("SpecifyPaymentDetails", new { conferenceCode = conferenceCode, orderId = command.OrderId });
+            // TODO check conference and order exist.
+            // TODO validate that order belongs to the user.
+
+            if (order == null)
+            {
+                throw new ArgumentException();
+            }
+
+            if (order.ReservationExpirationDate.HasValue && order.ReservationExpirationDate < DateTime.UtcNow)
+            {
+                return RedirectToAction("ShowExpiredOrder", new { conferenceCode = this.Conference.Code, orderId = orderId });
+            }
+
+            switch (paymentType)
+            {
+                case ThirdPartyProcessorPayment:
+
+                    return InitiateRegistrationWithThirdPartyProcessorPayment(command, orderId);
+
+                case InvoicePayment:
+                    break;
+
+                default:
+                    break;
+            }
+
+            throw new InvalidOperationException();
         }
 
         [HttpGet]
-        public ActionResult SpecifyPaymentDetails(string conferenceCode, Guid orderId)
-        {
-            var repo = this.repositoryFactory();
-            using (repo as IDisposable)
-            {
-                var orderDTO = repo.Find<OrderDTO>(orderId);
-                var viewModel = this.CreateViewModel(conferenceCode, orderDTO);
-
-                this.ViewBag.ExpirationDateUTC = orderDTO.ReservationExpirationDate;
-
-                return View(viewModel);
-            }
-        }
-
-        [HttpPost]
-        public ActionResult SpecifyPaymentDetails(string conferenceCode, Guid orderId, PaymentDetails paymentDetails)
-        {
-            return RedirectToAction("Display", "Payment", new { conferenceCode = conferenceCode, orderId = orderId });
-        }
-
-        [HttpGet]
-        public ActionResult TransactionCompleted(string conferenceCode, Guid orderId, string transactionResult)
-        {
-            if (transactionResult == "accepted")
-            {
-                return RedirectToAction("ThankYou", new { conferenceCode = conferenceCode, orderId = orderId });
-            }
-            else
-            {
-                return RedirectToAction("SpecifyPaymentDetails", new { conferenceCode = conferenceCode, orderId = orderId });
-            }
-        }
-
-        [HttpGet]
-        public ActionResult DisplayOrderStatus(string conferenceCode, Guid orderId)
+        [OutputCache(Duration = 0)]
+        public ActionResult ShowExpiredOrder(Guid orderId)
         {
             return View();
         }
 
         [HttpGet]
+        [OutputCache(Duration = 0)]
         public ActionResult ThankYou(string conferenceCode, Guid orderId)
         {
-            OrderDTO order;
-            var repo = this.repositoryFactory();
-            using (repo as IDisposable)
-            {
-                order = repo.Query<OrderDTO>().FirstOrDefault(x => x.OrderId == orderId);
-            }
+            var order = this.orderDao.GetOrderDetails(orderId);
 
             return View(order);
         }
 
-        private OrderViewModel CreateViewModel(string conferenceCode)
+        private ActionResult InitiateRegistrationWithThirdPartyProcessorPayment(AssignRegistrantDetails command, Guid orderId)
         {
-            var repo = this.repositoryFactory();
+            var paymentCommand = CreatePaymentCommand(orderId);
 
-            using (repo as IDisposable)
-            {
-                // TODO: how to do .Include("Seats") with this generic repo?
-                var conference = repo.Query<ConferenceDTO>().FirstOrDefault(c => c.Code == conferenceCode);
+            this.commandBus.Send(new ICommand[] { command, paymentCommand });
 
-                //// TODO check null case
+            var paymentAcceptedUrl = this.Url.Action("ThankYou", new { conferenceCode = this.Conference.Code, orderId });
+            var paymentRejectedUrl = this.Url.Action("SpecifyRegistrantAndPaymentDetails", new { conferenceCode = this.Conference.Code, orderId });
 
-                var viewModel =
-                    new OrderViewModel
-                    {
-                        ConferenceId = conference.Id,
-                        ConferenceCode = conference.Code,
-                        ConferenceName = conference.Name,
-                        Items = conference.Seats.Select(s => new OrderItemViewModel { SeatTypeId = s.Id, SeatTypeDescription = s.Description, Price = s.Price }).ToList(),
-                    };
-
-                return viewModel;
-            }
+            return RedirectToAction(
+                "ThirdPartyProcessorPayment",
+                "Payment",
+                new
+                {
+                    conferenceCode = this.Conference.Code,
+                    paymentId = paymentCommand.PaymentId,
+                    paymentAcceptedUrl,
+                    paymentRejectedUrl
+                });
         }
 
-        private OrderViewModel CreateViewModel(string conferenceCode, OrderDTO orderDTO)
+        private InitiateThirdPartyProcessorPayment CreatePaymentCommand(Guid orderId)
         {
-            var viewModel = this.CreateViewModel(conferenceCode);
-            viewModel.Id = orderDTO.OrderId;
+            // TODO extract pricing outside the controller
+            var seats = this.conferenceDao.GetPublishedSeatTypes(this.Conference.Id);
+            var order = this.orderDao.GetOrderDetails(orderId);
+
+            var items =
+                from seat in seats
+                join orderItem in order.Lines on seat.Id equals orderItem.SeatType
+                select new { orderItem.SeatType, orderItem.ReservedSeats, seat.Price, ItemPrice = orderItem.ReservedSeats * seat.Price };
+
+            var description = "Registration for " + this.Conference.Name;
+            var totalAmount = items.Sum(i => i.ItemPrice);
+
+            var paymentCommand =
+                new InitiateThirdPartyProcessorPayment
+                {
+                    PaymentId = Guid.NewGuid(),
+                    ConferenceId = this.Conference.Id,
+                    PaymentSourceId = orderId,
+                    Description = description,
+                    TotalAmount = totalAmount
+                };
+
+            return paymentCommand;
+        }
+
+        private OrderViewModel CreateViewModel()
+        {
+            var seats = this.conferenceDao.GetPublishedSeatTypes(this.Conference.Id);
+            var viewModel =
+                new OrderViewModel
+                {
+                    ConferenceId = this.Conference.Id,
+                    ConferenceCode = this.Conference.Code,
+                    ConferenceName = this.Conference.Name,
+                    Items = seats.Select(s => new OrderItemViewModel { SeatTypeId = s.Id, SeatTypeDescription = s.Description, Price = s.Price }).ToList(),
+                };
+
+            return viewModel;
+        }
+
+        private OrderViewModel CreateViewModel(OrderDTO order)
+        {
+            var viewModel = this.CreateViewModel();
+            viewModel.Id = order.OrderId;
 
             // TODO check DTO matches view model
 
-
-            foreach (var line in orderDTO.Lines)
+            foreach (var line in order.Lines)
             {
                 var seat = viewModel.Items.First(s => s.SeatTypeId == line.SeatType);
                 seat.Quantity = line.ReservedSeats;
@@ -200,15 +241,11 @@ namespace Conference.Web.Public.Controllers
 
             while (DateTime.Now < deadline)
             {
-                var repo = this.repositoryFactory();
-                using (repo as IDisposable)
-                {
-                    var orderDTO = repo.Find<OrderDTO>(orderId);
+                var order = this.orderDao.GetOrderDetails(orderId);
 
-                    if (orderDTO != null && orderDTO.State != Registration.Order.States.Created)
-                    {
-                        return orderDTO;
-                    }
+                if (order != null && order.State != OrderDTO.States.Created)
+                {
+                    return order;
                 }
 
                 Thread.Sleep(500);
@@ -225,13 +262,7 @@ namespace Conference.Web.Public.Controllers
                 if (this.conference == null)
                 {
                     var conferenceCode = (string)ControllerContext.RouteData.Values["conferenceCode"];
-                    var repo = this.repositoryFactory();
-                    using (repo as IDisposable)
-                    {
-                        this.conference = repo.Query<ConferenceAliasDTO>()
-                            .Where(c => c.Code == conferenceCode)
-                            .FirstOrDefault();
-                    }
+                    this.conference = this.conferenceDao.GetConferenceAlias(conferenceCode);
                 }
 
                 return this.conference;

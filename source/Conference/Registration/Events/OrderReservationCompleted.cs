@@ -11,25 +11,17 @@
 // See the License for the specific language governing permissions and limitations under the License.
 // ==============================================================================================================
 
+
 namespace Registration.Events
 {
     using System;
     using System.Collections.Generic;
-    using Common;
+    using Infrastructure.EventSourcing;
 
-    public class OrderReservationCompleted : IEvent
+    public class OrderReservationCompleted : VersionedEvent
     {
-        public OrderReservationCompleted()
-        {
-            this.Seats = new List<SeatQuantity>();
-        }
-
-        public Guid OrderId { get; set; }
-
-        public Guid ConferenceId { get; set; }
-
         public DateTime ReservationExpiration { get; set; }
 
-        public List<SeatQuantity> Seats { get; set; }
+        public IEnumerable<SeatQuantity> Seats { get; set; }
     }
 }

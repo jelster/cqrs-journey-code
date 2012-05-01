@@ -11,16 +11,48 @@
 // See the License for the specific language governing permissions and limitations under the License.
 // ==============================================================================================================
 
-namespace Conference.Web.Controllers
+namespace Conference.Web.Admin.Controllers
 {
     using System;
     using System.Data;
-    using System.Linq;
     using System.Web.Mvc;
 
     public class ConferenceController : Controller
     {
-        private DomainContext db = new DomainContext();
+        private ConferenceService service;
+
+        private ConferenceService Service
+        {
+            get { return service ?? (service = new ConferenceService(MvcApplication.EventBus)); }
+        }
+
+        public ConferenceInfo Conference { get; private set; }
+
+        // TODO: Locate and Create are the ONLY methods that don't require authentication/location info.
+
+        /// <summary>
+        /// We receive the slug value as a kind of cross-cutting value that 
+        /// all methods need and use, so we catch and load the conference here, 
+        /// so it's available for all. Each method doesn't need the slug parameter.
+        /// </summary>
+        protected override void OnActionExecuting(ActionExecutingContext filterContext)
+        {
+            var slug = (string)this.ControllerContext.RequestContext.RouteData.Values["slug"];
+            if (!string.IsNullOrEmpty(slug))
+            {
+                this.ViewBag.Slug = slug;
+                this.Conference = this.Service.FindConference(slug);
+                if (this.Conference != null)
+                {
+                    this.ViewBag.OwnerName = this.Conference.OwnerName;
+                    this.ViewBag.WasEverPublished = this.Conference.WasEverPublished;
+                }
+            }
+
+            base.OnActionExecuting(filterContext);
+        }
+
+        #region Conference Details
 
         public ActionResult Locate()
         {
@@ -30,7 +62,7 @@ namespace Conference.Web.Controllers
         [HttpPost]
         public ActionResult Locate(string email, string accessCode)
         {
-            var conference = db.Conferences.FirstOrDefault(c => c.OwnerEmail == email && c.AccessCode == accessCode);
+            var conference = this.Service.FindConference(email, accessCode);
             if (conference == null)
             {
                 ViewBag.NotFound = true;
@@ -41,17 +73,16 @@ namespace Conference.Web.Controllers
             }
 
             // TODO: not very secure ;).
-            return RedirectToAction("Details", new { id = conference.Id });
+            return RedirectToAction("Index", new { slug = conference.Slug });
         }
 
-        public ActionResult Details(Guid id)
+        public ActionResult Index()
         {
-            var conference = db.Conferences.Find(id);
-            if (conference == null)
+            if (this.Conference == null)
             {
                 return HttpNotFound();
             }
-            return View(conference);
+            return View(this.Conference);
         }
 
         public ActionResult Create()
@@ -64,99 +95,163 @@ namespace Conference.Web.Controllers
         {
             if (ModelState.IsValid)
             {
-                var existingSlug = db.Conferences
-                    .Where(c => c.Slug == conference.Slug)
-                    .Select(c => c.Slug)
-                    .Any();
-
-                if (existingSlug)
+                try
                 {
-                    ModelState.AddModelError("Slug", "The chosen conference slug is already taken.");
+                    conference.Id = Guid.NewGuid();
+                    this.Service.CreateConference(conference);
+                }
+                catch (DuplicateNameException e)
+                {
+                    ModelState.AddModelError("Slug", e.Message);
                     return View(conference);
                 }
 
-                conference.Id = Guid.NewGuid();
-                db.Conferences.Add(conference);
-                db.SaveChanges();
-                return RedirectToAction("Details", new { id = conference.Id });
+                return RedirectToAction("Index", new { slug = conference.Slug });
             }
 
             return View(conference);
         }
 
-        public ActionResult Edit(Guid id)
+        public ActionResult Edit()
         {
-            var conference = db.Conferences.Find(id);
-            if (conference == null)
+            if (this.Conference == null)
             {
                 return HttpNotFound();
             }
-            return View(conference);
+            return View(this.Conference);
         }
 
         [HttpPost]
         public ActionResult Edit(ConferenceInfo conference)
         {
+            if (this.Conference == null)
+            {
+                return HttpNotFound();
+            }
             if (ModelState.IsValid)
             {
-                db.Entry(conference).State = EntityState.Modified;
-                db.SaveChanges();
-                return RedirectToAction("Details", new { id = conference.Id });
+                this.Service.UpdateConference(conference);
+                return RedirectToAction("Index", new { slug = conference.Slug });
             }
 
             return View(conference);
         }
 
-        public ActionResult Delete(Guid id)
-        {
-            var conference = db.Conferences.Find(id);
-            if (conference == null)
-            {
-                return HttpNotFound();
-            }
-            return View(conference);
-        }
-
-        [HttpPost, ActionName("Delete")]
-        public ActionResult DeleteConfirmed(Guid id)
-        {
-            var conference = db.Conferences.Find(id);
-            db.Conferences.Remove(conference);
-            db.SaveChanges();
-            return RedirectToAction("Index");
-        }
-
         [HttpPost]
-        public ActionResult Publish(Guid id)
+        public ActionResult Publish()
         {
-            return SetPublished(id, true);
-        }
-
-        [HttpPost]
-        public ActionResult Unpublish(Guid id)
-        {
-            return SetPublished(id, false);
-        }
-
-        private ActionResult SetPublished(Guid id, bool isPublished)
-        {
-            var conference = db.Conferences.Find(id);
-            if (conference == null)
+            if (this.Conference == null)
             {
                 return HttpNotFound();
             }
 
-            conference.IsPublished = isPublished;
-            db.SaveChanges();
+            this.Service.Publish(this.Conference.Id);
 
-            // TODO: not very secure ;).
-            return RedirectToAction("Details", new { id = id });
+            return RedirectToAction("Index", new { slug = this.Conference.Slug });
         }
 
-        protected override void Dispose(bool disposing)
+        [HttpPost]
+        public ActionResult Unpublish()
         {
-            db.Dispose();
-            base.Dispose(disposing);
+            if (this.Conference == null)
+            {
+                return HttpNotFound();
+            }
+
+            this.Service.Unpublish(this.Conference.Id);
+
+            return RedirectToAction("Index", new { slug = this.Conference.Slug });
         }
+
+        #endregion
+
+        #region Seat Types
+
+        public ViewResult Seats()
+        {
+            return View();
+        }
+
+        public ActionResult SeatGrid()
+        {
+            if (this.Conference == null)
+            {
+                return HttpNotFound();
+            }
+
+            return PartialView(this.Service.FindSeats(this.Conference.Id));
+        }
+
+        public ActionResult SeatRow(Guid id)
+        {
+            return PartialView("SeatGrid", new SeatInfo[] { this.Service.FindSeat(id) });
+        }
+
+        public ActionResult CreateSeat()
+        {
+            return PartialView("EditSeat");
+        }
+
+        [HttpPost]
+        public ActionResult CreateSeat(SeatInfo seat)
+        {
+            if (this.Conference == null)
+            {
+                return HttpNotFound();
+            }
+
+            if (ModelState.IsValid)
+            {
+                seat.Id = Guid.NewGuid();
+                this.Service.CreateSeat(this.Conference.Id, seat);
+
+                return PartialView("SeatGrid", new SeatInfo[] { seat });
+            }
+
+            return PartialView("EditSeat", seat);
+        }
+
+        public ActionResult EditSeat(Guid id)
+        {
+            if (this.Conference == null)
+            {
+                return HttpNotFound();
+            }
+
+            return PartialView(this.Service.FindSeat(id));
+        }
+
+        [HttpPost]
+        public ActionResult EditSeat(SeatInfo seat)
+        {
+            if (this.Conference == null)
+            {
+                return HttpNotFound();
+            }
+
+            if (ModelState.IsValid)
+            {
+                try
+                {
+                    this.Service.UpdateSeat(this.Conference.Id, seat);
+                }
+                catch (ObjectNotFoundException)
+                {
+                    return HttpNotFound();
+                }
+
+                return PartialView("SeatGrid", new SeatInfo[] { seat });
+            }
+
+            return PartialView(seat);
+        }
+
+        [HttpPost]
+        public void DeleteSeat(Guid id)
+        {
+            this.Service.DeleteSeat(id);
+        }
+
+        #endregion
     }
 }

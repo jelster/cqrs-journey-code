@@ -20,14 +20,19 @@ namespace Conference.Web.Public
     {
         public static void RegisterRoutes(RouteCollection routes)
         {
+            routes.IgnoreRoute("{resource}.axd/{*pathInfo}");
+            routes.IgnoreRoute("{*favicon}", new { favicon = @"(.*/)?favicon.ico(/.*)?" });
+
             routes.MapRoute(
                 "Home",
                 string.Empty,
                 new { controller = "Default", action = "Index" });
 
+            // Registration routes
+
             routes.MapRoute(
                 "ViewConference",
-                "{conferenceCode}",
+                "{conferenceCode}/",
                 new { controller = "Conference", action = "Display" });
 
             routes.MapRoute(
@@ -38,37 +43,17 @@ namespace Conference.Web.Public
             routes.MapRoute(
                 "RegisterRegistrantDetails",
                 "{conferenceCode}/registrant",
-                new { controller = "Registration", action = "SpecifyRegistrantDetails" });
+                new { controller = "Registration", action = "SpecifyRegistrantAndPaymentDetails" });
 
             routes.MapRoute(
-                "RegisterChoosePayment",
-                "{conferenceCode}/payment",
-                new { controller = "Registration", action = "SpecifyPaymentDetails" });
-
-            routes.MapRoute(
-                "RegisterTransactionCompleted",
-                "{conferenceCode}/completed",
-                new { controller = "Registration", action = "TransactionCompleted" });
+                "ExpiredOrder",
+                "{conferenceCode}/expired",
+                new { controller = "Registration", action = "ShowExpiredOrder" });
 
             routes.MapRoute(
                 "RegisterConfirmation",
                 "{conferenceCode}/confirmation",
                 new { controller = "Registration", action = "ThankYou" });
-
-            routes.MapRoute(
-                "PaymentDisplay",
-                "{conferenceCode}/payment-fake",
-                new { controller = "Payment", action = "Display" });
-
-            routes.MapRoute(
-                "PaymentAccept",
-                "{conferenceCode}/payment-accept",
-                new { controller = "Payment", action = "AcceptPayment" });
-
-            routes.MapRoute(
-                "PaymentReject",
-                "{conferenceCode}/payment-reject",
-                new { controller = "Payment", action = "RejectPayment" });
 
             routes.MapRoute(
                 "OrderFind",
@@ -79,6 +64,21 @@ namespace Conference.Web.Public
                 "OrderDisplay",
                 "{conferenceCode}/order/{orderId}",
                 new { controller = "Order", action = "Display" });
+
+            routes.MapRoute(
+                "InitiateThirdPartyPayment",
+                "{conferenceCode}/third-party-payment",
+                new { controller = "Payment", action = "ThirdPartyProcessorPayment" });
+
+            routes.MapRoute(
+                "PaymentAccept",
+                "{conferenceCode}/third-party-payment-accept",
+                new { controller = "Payment", action = "ThirdPartyProcessorPaymentAccepted" });
+
+            routes.MapRoute(
+                "PaymentReject",
+                "{conferenceCode}/third-party-payment-reject",
+                new { controller = "Payment", action = "ThirdPartyProcessorPaymentRejected" });
         }
     }
 }

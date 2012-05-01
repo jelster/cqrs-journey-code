@@ -15,164 +15,127 @@ namespace Registration
 {
     using System;
     using System.Collections.Generic;
-    using System.Collections.ObjectModel;
-    using System.ComponentModel.DataAnnotations;
     using System.Linq;
-    using Common;
-    using Common.Utils;
+    using Conference.Common.Utils;
+    using Infrastructure.EventSourcing;
     using Registration.Events;
 
-    public class Order : IAggregateRoot, IEventPublisher
+    public class Order : EventSourced
     {
-        public enum States
-        {
-            Created = 0,
-            PartiallyReserved = 1,
-            ReservationCompleted = 2,
-            Rejected = 3,
-            Confirmed = 4,
-        }
-
         private static readonly TimeSpan ReservationAutoExpiration = TimeSpan.FromMinutes(15);
 
-        private List<IEvent> events = new List<IEvent>();
+        private List<SeatQuantity> seats;
+        private bool isConfirmed;
 
-        protected Order()
+        protected Order(Guid id) : base(id)
         {
+            base.Handles<OrderPlaced>(this.OnOrderPlaced);
+            base.Handles<OrderUpdated>(this.OnOrderUpdated);
+            base.Handles<OrderPartiallyReserved>(this.OnOrderPartiallyReserved);
+            base.Handles<OrderReservationCompleted>(this.OnOrderReservationCompleted);
+            base.Handles<OrderExpired>(this.OnOrderExpired);
+            base.Handles<OrderPaymentConfirmed>(this.OnOrderPaymentConfirmed);
+            base.Handles<OrderRegistrantAssigned>(this.OnOrderRegistrantAssigned);
         }
 
-        public Order(Guid id, Guid conferenceId, IEnumerable<OrderItem> items)
+        public Order(Guid id, IEnumerable<IVersionedEvent> history) : this(id)
         {
-            this.Id = id;
-            this.ConferenceId = conferenceId;
-            this.Registrant = new Registrant();
-            this.AccessCode = HandleGenerator.Generate(6);
-            this.Items = new ObservableCollection<OrderItem>(items);
-            this.ReservationExpirationDate = DateTime.UtcNow.Add(ReservationAutoExpiration);
-
-            this.events.Add(
-                new OrderPlaced
-                {
-                    OrderId = this.Id,
-                    ConferenceId = this.ConferenceId,
-                    AccessCode = this.AccessCode,
-                    ReservationAutoExpiration = this.ReservationExpirationDate.Value,
-                    Seats = this.Items.Select(x => new SeatQuantity { SeatType = x.SeatType, Quantity = x.Quantity }).ToList()
-                });
+            this.LoadFrom(history);
         }
 
-        public IEnumerable<IEvent> Events
+        public Order(Guid id, Guid conferenceId, IEnumerable<OrderItem> items) : this(id)
         {
-            get { return this.events; }
+            this.Update(new OrderPlaced 
+            {
+                ConferenceId = conferenceId, 
+                Seats = ConvertItems(items),
+                ReservationAutoExpiration = DateTime.UtcNow.Add(ReservationAutoExpiration),
+                AccessCode = HandleGenerator.Generate(6)
+            });
         }
-
-        public Guid Id { get; private set; }
-
-        public Guid ConferenceId { get; private set; }
-
-        public virtual ObservableCollection<OrderItem> Items { get; private set; }
-
-        public Registrant Registrant { get; private set; }
-
-        /// <summary>
-        /// Access code, combined with the registrant email can 
-        /// be used to find the order and provide low chances of 
-        /// collision as it's also scoped to the conference.
-        /// </summary>
-        public string AccessCode { get; set; }
-
-        public int StateValue { get; private set; }
-        [NotMapped]
-        public States State
-        {
-            get { return (States)this.StateValue; }
-            internal set { this.StateValue = (int)value; }
-        }
-
-        public DateTime? ReservationExpirationDate { get; private set; }
 
         public void UpdateSeats(IEnumerable<OrderItem> seats)
         {
-            this.Items.Clear();
-            this.Items.AddRange(seats);
-
-            this.events.Add(
-                new OrderUpdated
-                {
-                    OrderId = this.Id,
-                    Seats = this.Items.Select(x => new SeatQuantity { SeatType = x.SeatType, Quantity = x.Quantity }).ToArray()
-                });
+            this.Update(new OrderUpdated { Seats = ConvertItems(seats) });
         }
 
-        public void MarkAsReserved(DateTime expirationDate, IEnumerable<SeatQuantity> seats)
+        public void MarkAsReserved(DateTime expirationDate, IEnumerable<SeatQuantity> reservedSeats)
         {
-            if (this.State == States.Confirmed || this.State == States.Rejected)
-                throw new InvalidOperationException("Cannot modify confirmed or cancelled order.");
+            if (this.isConfirmed)
+                throw new InvalidOperationException("Cannot modify a confirmed order.");
+
+            var reserved = reservedSeats.ToList();
 
             // Is there an order item which didn't get an exact reservation?
-            if (this.Items.Any(item => !seats.Any(seat => seat.SeatType == item.SeatType && seat.Quantity == item.Quantity)))
+            if (this.seats.Any(item => !reserved.Any(seat => seat.SeatType == item.SeatType && seat.Quantity == item.Quantity)))
             {
-                this.State = States.PartiallyReserved;
-                this.events.Add(new OrderPartiallyReserved
-                {
-                    OrderId = this.Id,
-                    ConferenceId = this.ConferenceId,
-                    Seats = seats.ToList(),
-                    ReservationExpiration = expirationDate,
-                });
+                this.Update(new OrderPartiallyReserved { ReservationExpiration = expirationDate, Seats = reserved.ToArray() });
             }
             else
             {
-                this.State = States.ReservationCompleted;
-                this.events.Add(new OrderReservationCompleted
-                {
-                    OrderId = this.Id,
-                    ConferenceId = this.ConferenceId,
-                    Seats = seats.ToList(),
-                    ReservationExpiration = expirationDate,
-                });
+                this.Update(new OrderReservationCompleted { ReservationExpiration = expirationDate, Seats = reserved.ToArray() });
             }
-
-            this.ReservationExpirationDate = expirationDate;
-            this.Items.Clear();
-            this.Items.AddRange(seats.Select(seat => new OrderItem(seat.SeatType, seat.Quantity)));
         }
 
-        public void Reject()
+        public void Expire()
         {
-            // TODO: when do we "reject" order? Is it "Cancel" or something else?
-            if (this.State == States.Confirmed)
+            if (this.isConfirmed)
                 throw new InvalidOperationException();
 
-            this.State = States.Rejected;
-            this.ReservationExpirationDate = null;
+            this.Update(new OrderExpired());
         }
 
         public void ConfirmPayment()
         {
-            if (this.State != States.ReservationCompleted)
-                throw new InvalidOperationException();
-
-            this.State = States.Confirmed;
-            this.ReservationExpirationDate = null;
+            this.Update(new OrderPaymentConfirmed());
         }
 
         public void AssignRegistrant(string firstName, string lastName, string email)
         {
-            this.Registrant = new Registrant
+            this.Update(new OrderRegistrantAssigned
             {
-                FirstName = firstName,
-                LastName = lastName,
-                Email = email,
-            };
-
-            this.events.Add(new OrderRegistrantAssigned
-            {
-                OrderId = this.Id,
                 FirstName = firstName,
                 LastName = lastName,
                 Email = email,
             });
+        }
+
+        private void OnOrderPlaced(OrderPlaced e)
+        {
+            this.seats = e.Seats.ToList();
+        }
+
+        private void OnOrderUpdated(OrderUpdated e)
+        {
+            this.seats = e.Seats.ToList();
+        }
+        
+        private void OnOrderPartiallyReserved(OrderPartiallyReserved e)
+        {
+            this.seats = e.Seats.ToList();
+        }
+
+        private void OnOrderReservationCompleted(OrderReservationCompleted e)
+        {
+            this.seats = e.Seats.ToList();
+        }
+
+        private void OnOrderExpired(OrderExpired e)
+        {
+        }
+
+        private void OnOrderPaymentConfirmed(OrderPaymentConfirmed e)
+        {
+            this.isConfirmed = true;
+        }
+
+        private void OnOrderRegistrantAssigned(OrderRegistrantAssigned e)
+        {
+        }
+
+        private static List<SeatQuantity> ConvertItems(IEnumerable<OrderItem> items)
+        {
+            return items.Select(x => new SeatQuantity(x.SeatType, x.Quantity)).ToList();
         }
     }
 }

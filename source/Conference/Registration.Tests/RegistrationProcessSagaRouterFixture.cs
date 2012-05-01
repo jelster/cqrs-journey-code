@@ -17,6 +17,7 @@ namespace Registration.Tests
     using System.Linq;
     using Common;
     using Moq;
+    using Payments.Contracts.Events;
     using Registration.Events;
     using Xunit;
 
@@ -93,7 +94,7 @@ namespace Registration.Tests
             var disposable = repo.As<IDisposable>();
             var router = new RegistrationProcessSagaRouter(() => repo.Object);
 
-            router.Handle(new Events.PaymentReceived { OrderId = saga.OrderId });
+            router.Handle(new PaymentCompleted { SourceId = saga.OrderId });
 
             repo.Verify(x => x.Save(It.IsAny<RegistrationProcessSaga>()));
             disposable.Verify(x => x.Dispose());

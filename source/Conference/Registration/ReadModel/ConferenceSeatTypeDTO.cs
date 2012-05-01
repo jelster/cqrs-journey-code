@@ -18,11 +18,13 @@ namespace Registration.ReadModel
 
     public class ConferenceSeatTypeDTO
     {
-        public ConferenceSeatTypeDTO(Guid id, string description, double price)
+        public ConferenceSeatTypeDTO(Guid id, string name, string description, decimal price, int quantity)
         {
             this.Id = id;
+            this.Name = name;
             this.Description = description;
             this.Price = price;
+            this.Quantity = quantity;
         }
 
         protected ConferenceSeatTypeDTO()
@@ -30,10 +32,10 @@ namespace Registration.ReadModel
         }
 
         [Key]
-        public virtual Guid Id { get; private set; }
-
-        public virtual string Description { get; private set; }
-
-        public virtual double Price { get; private set; }
+        public Guid Id { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public decimal Price { get; set; }
+        public int Quantity { get; set; }
     }
 }

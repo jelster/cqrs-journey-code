@@ -13,18 +13,11 @@
 
 namespace Registration.Events
 {
-    using System;
     using System.Collections.Generic;
-    using Common;
+    using Infrastructure.EventSourcing;
 
-    public class OrderUpdated : IEvent
+    public class OrderUpdated : VersionedEvent
     {
-        public OrderUpdated()
-        {
-            this.Seats = new List<SeatQuantity>();
-        }
-
-        public Guid OrderId { get; set; }
-        public ICollection<SeatQuantity> Seats { get; set; }
+        public IEnumerable<SeatQuantity> Seats { get; set; }
     }
 }

@@ -15,16 +15,14 @@ namespace Registration.Events
 {
     using System;
     using System.Collections.Generic;
-    using Common;
+    using Infrastructure.EventSourcing;
 
-    public class SeatsReserved : IEvent
+    public class SeatsReserved : VersionedEvent
     {
-        public SeatsReserved()
-        {
-            this.Seats = new List<SeatQuantity>();
-        }
-
         public Guid ReservationId { get; set; }
-        public List<SeatQuantity> Seats { get; private set; }
+
+        public IEnumerable<SeatQuantity> ReservationDetails { get; set; }
+
+        public IEnumerable<SeatQuantity> AvailableSeatsChanged { get; set; }
     }
 }

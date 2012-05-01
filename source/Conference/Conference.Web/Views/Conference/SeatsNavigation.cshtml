@@ -1,0 +1,9 @@
+﻿<div class="navigation">
+    <!-- TODO: make a reusable control? -->
+    @Html.ActionLink("Home", "Index", "Home") | 
+    @Html.ActionLink("Conference Details", "Index", new { slug = ViewBag.Slug }) | 
+    <strong>@Html.ActionLink("Seat Types", "Seats", new { slug = ViewBag.Slug })</strong> | 
+    <a href="#">Venue Details</a> |
+    <a href="#">Registrations</a> |
+    <a href="#">Sessions</a>
+</div>

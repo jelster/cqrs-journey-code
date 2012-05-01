@@ -14,26 +14,22 @@
 namespace Conference.Web.Public.Tests.Controllers.OrderControllerFixture
 {
     using System;
-    using System.Linq;
     using System.Web.Mvc;
-    using Common;
     using Conference.Web.Public.Controllers;
-    using Conference.Web.Public.Models;
     using Moq;
-    using Registration;
     using Registration.ReadModel;
     using Xunit;
 
     public class given_controller
     {
         protected readonly OrderController sut;
-        protected readonly IViewRepository viewRepository;
+        protected readonly IOrderDao orderDao;
 
         public given_controller()
         {
-            this.viewRepository = Mock.Of<IViewRepository>();
+            this.orderDao = Mock.Of<IOrderDao>();
 
-            this.sut = new OrderController(() => this.viewRepository);
+            this.sut = new OrderController(this.orderDao);
         }
 
         [Fact]
@@ -54,16 +50,13 @@ namespace Conference.Web.Public.Tests.Controllers.OrderControllerFixture
         {
             // Arrange
             var orderId = Guid.NewGuid();
-            var orderDto = new OrderDTO(orderId, Order.States.Created)
+            var orderDto = new OrderDTO(orderId, OrderDTO.States.Created)
             {
                 RegistrantEmail = "info@contoso.com",
                 AccessCode = "asdf",
             };
 
-            Mock.Get<IViewRepository>(this.viewRepository)
-                .Setup(r => r.Find<OrderDTO>(orderId))
-                .Returns(orderDto);
-
+            Mock.Get(this.orderDao).Setup(r => r.GetOrderDetails(orderId)).Returns(orderDto);
 
             // Act
             var result = (ViewResult)this.sut.Display("conference", orderId);
@@ -89,17 +82,7 @@ namespace Conference.Web.Public.Tests.Controllers.OrderControllerFixture
         {
             // Arrange
             var orderId = Guid.NewGuid();
-            Mock.Get<IViewRepository>(this.viewRepository)
-                .Setup(r => r.Query<OrderDTO>())
-                .Returns(new OrderDTO[] 
-                { 
-                    new OrderDTO(orderId, Order.States.Created) 
-                    {
-                        RegistrantEmail = "info@contoso.com",
-                        AccessCode = "asdf", 
-                    }
-                }.AsQueryable());
-
+            Mock.Get(this.orderDao).Setup(r => r.LocateOrder("info@contoso.com", "asdf")).Returns(orderId);
 
             // Act
             var result = (RedirectToRouteResult)this.sut.Find("conference", "info@contoso.com", "asdf");

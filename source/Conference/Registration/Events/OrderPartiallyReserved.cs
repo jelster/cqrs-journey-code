@@ -15,21 +15,12 @@ namespace Registration.Events
 {
     using System;
     using System.Collections.Generic;
-    using Common;
+    using Infrastructure.EventSourcing;
 
-    public class OrderPartiallyReserved : IEvent
+    public class OrderPartiallyReserved : VersionedEvent
     {
-        public OrderPartiallyReserved()
-        {
-            this.Seats = new List<SeatQuantity>();
-        }
-
-        public Guid OrderId { get; set; }
-
-        public Guid ConferenceId { get; set; }
-
         public DateTime ReservationExpiration { get; set; }
 
-        public List<SeatQuantity> Seats { get; set; }
+        public IEnumerable<SeatQuantity> Seats { get; set; }
     }
 }

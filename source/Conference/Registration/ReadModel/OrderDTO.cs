@@ -20,7 +20,16 @@ namespace Registration.ReadModel
 
     public class OrderDTO
     {
-        public OrderDTO(Guid orderId, Order.States state)
+        public enum States
+        {
+            Created = 0,
+            PartiallyReserved = 1,
+            ReservationCompleted = 2,
+            Rejected = 3,
+            Confirmed = 4,
+        }
+
+        public OrderDTO(Guid orderId, States state)
             : this()
         {
             this.OrderId = orderId;
@@ -37,14 +46,14 @@ namespace Registration.ReadModel
 
         public DateTime? ReservationExpirationDate { get; set; }
 
-        public virtual ICollection<OrderItemDTO> Lines { get; private set; }
+        public ICollection<OrderItemDTO> Lines { get; private set; }
 
         public int StateValue { get; private set; }
 
         [NotMapped]
-        public Order.States State
+        public States State
         {
-            get { return (Order.States)this.StateValue; }
+            get { return (States)this.StateValue; }
             set { this.StateValue = (int)value; }
         }
 
