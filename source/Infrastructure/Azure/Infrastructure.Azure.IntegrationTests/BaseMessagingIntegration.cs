@@ -23,7 +23,7 @@ namespace Infrastructure.Azure.IntegrationTests
     {
         public given_messaging_settings()
         {
-            this.Settings = MessagingSettings.Read("Settings.xml");
+            this.Settings = InfrastructureSettings.ReadMessaging("Settings.xml");
         }
 
         public MessagingSettings Settings { get; private set; }
@@ -33,8 +33,8 @@ namespace Infrastructure.Azure.IntegrationTests
     {
         public given_a_topic_and_subscription()
         {
-            this.Topic = Guid.NewGuid().ToString();
-            this.Subscription = Guid.NewGuid().ToString();
+            this.Topic = "Test-" + Guid.NewGuid().ToString();
+            this.Subscription = "Test-" + Guid.NewGuid().ToString();
 
             // Creates the topic too.
             this.Settings.CreateSubscription(this.Topic, this.Subscription);

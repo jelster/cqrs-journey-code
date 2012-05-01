@@ -20,8 +20,9 @@ namespace Conference.IntegrationTests.ConferenceServiceTests
     using Infrastructure.Messaging.InMemory;
     using Xunit;
 
-    public class given_no_conference
+    public class given_no_conference : IDisposable
     {
+        private string dbName = "ConferenceServiceTests_" + Guid.NewGuid().ToString();
         private MemoryEventBus bus;
         private ConferenceService service;
 
@@ -32,8 +33,25 @@ namespace Conference.IntegrationTests.ConferenceServiceTests
 
         public given_no_conference()
         {
+            using (var context = new ConferenceContext(dbName))
+            {
+                if (context.Database.Exists())
+                    context.Database.Delete();
+
+                context.Database.CreateIfNotExists();
+            }
+
             this.bus = new MemoryEventBus();
-            this.service = new ConferenceService(this.bus);
+            this.service = new ConferenceService(this.bus, this.dbName);
+        }
+
+        public void Dispose()
+        {
+            using (var context = new ConferenceContext(dbName))
+            {
+                if (context.Database.Exists())
+                    context.Database.Delete();
+            }
         }
 
         [Fact]
@@ -93,7 +111,7 @@ namespace Conference.IntegrationTests.ConferenceServiceTests
 
     public class given_an_existing_conference_with_a_seat : IDisposable
     {
-        private string dbName = Guid.NewGuid().ToString();
+        private string dbName = "ConferenceServiceTests_" + Guid.NewGuid().ToString();
         private ConferenceInfo conference;
         private MemoryEventBus bus;
         private ConferenceService service;
@@ -168,17 +186,7 @@ namespace Conference.IntegrationTests.ConferenceServiceTests
             Assert.Equal(seat.Name, e.Name);
             Assert.Equal(seat.Description, e.Description);
             Assert.Equal(seat.Price, e.Price);
-        }
-
-        [Fact]
-        public void then_seats_added_is_published()
-        {
-            var e = bus.Events.OfType<SeatsAdded>().Single();
-            var seat = this.conference.Seats.Single();
-
-            Assert.Equal(seat.Id, e.SourceId);
-            Assert.Equal(seat.Quantity, e.AddedQuantity);
-            Assert.Equal(seat.Quantity, e.TotalQuantity);
+            Assert.Equal(seat.Quantity, e.Quantity);
         }
 
         [Fact]
@@ -251,27 +259,7 @@ namespace Conference.IntegrationTests.ConferenceServiceTests
             Assert.Equal(seat.Name, e.Name);
             Assert.Equal(seat.Description, e.Description);
             Assert.Equal(seat.Price, e.Price);
-        }
-
-        [Fact]
-        public void when_creating_seat_then_seats_added_is_published()
-        {
-            var seat = new SeatInfo
-            {
-                Name = "precon",
-                Description = "precon desc",
-                Price = 100,
-                Quantity = 100,
-            };
-
-            service.CreateSeat(this.conference.Id, seat);
-
-            var e = bus.Events.OfType<SeatsAdded>().Single(x => x.SourceId == seat.Id);
-
-            Assert.Equal(this.conference.Id, e.ConferenceId);
-            Assert.Equal(seat.Id, e.SourceId);
-            Assert.Equal(seat.Quantity, e.AddedQuantity);
-            Assert.Equal(seat.Quantity, e.TotalQuantity);
+            Assert.Equal(seat.Quantity, e.Quantity);
         }
 
         [Fact]
@@ -335,6 +323,7 @@ namespace Conference.IntegrationTests.ConferenceServiceTests
             seat.Name = "precon";
             seat.Description = "precon desc";
             seat.Price = 200;
+            seat.Quantity = 1000;
 
             service.UpdateSeat(this.conference.Id, seat);
 
@@ -345,38 +334,7 @@ namespace Conference.IntegrationTests.ConferenceServiceTests
             Assert.Equal("precon", e.Name);
             Assert.Equal("precon desc", e.Description);
             Assert.Equal(200, e.Price);
-        }
-
-        [Fact]
-        public void when_updating_seat_adds_then_seats_added_is_published()
-        {
-            var seat = this.conference.Seats.First();
-            seat.Quantity += 100;
-
-            service.UpdateSeat(this.conference.Id, seat);
-
-            var e = bus.Events.OfType<SeatsAdded>().LastOrDefault();
-
-            Assert.Equal(this.conference.Id, e.ConferenceId);
-            Assert.Equal(seat.Id, e.SourceId);
-            Assert.Equal(seat.Quantity, e.TotalQuantity);
-            Assert.Equal(100, e.AddedQuantity);
-        }
-
-        [Fact]
-        public void when_updating_seat_removes_then_seats_removed_is_published()
-        {
-            var seat = this.conference.Seats.First();
-            seat.Quantity -= 50;
-
-            service.UpdateSeat(this.conference.Id, seat);
-
-            var e = bus.Events.OfType<SeatsRemoved>().LastOrDefault();
-
-            Assert.Equal(this.conference.Id, e.ConferenceId);
-            Assert.Equal(seat.Id, e.SourceId);
-            Assert.Equal(seat.Quantity, e.TotalQuantity);
-            Assert.Equal(50, e.RemovedQuantity);
+            Assert.Equal(1000, e.Quantity);
         }
 
         [Fact]
