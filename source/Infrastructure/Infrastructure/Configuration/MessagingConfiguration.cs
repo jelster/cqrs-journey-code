@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -19,7 +20,7 @@ namespace Infrastructure.Configuration
             }
         }
 
-        private static readonly Dictionary<string, MessagingConfiguration> Current = new Dictionary<string, MessagingConfiguration>();
+        public static readonly ConcurrentDictionary<string, MessagingConfiguration> Current = new ConcurrentDictionary<string, MessagingConfiguration>();
 
         private static readonly object Sync = new Object();
 
@@ -53,7 +54,7 @@ namespace Infrastructure.Configuration
 
             lock (Sync)
             {
-                Current.Add(configName, instance); // TODO: replace with AddOrUpdate style of call
+                Current.AddOrUpdate(configName, instance, (s, configuration) => instance); 
             }
 
             return instance;
