@@ -9,9 +9,9 @@ using System.Reactive.Linq;
 using System.Threading;
 using Infrastructure.EventSourcing;
 using Infrastructure.Messaging;
+using Microsoft.Practices.Unity;
 using Moq;
 using Xunit;
-
 
 namespace Infrastructure.Tests
 {
@@ -19,7 +19,7 @@ namespace Infrastructure.Tests
     {
         public int numberOfFakeEventsRaised { get; private set; }
         public int numberOfBarEventsRaised { get; private set; }
-    
+
         public FakeEventSource(Guid id) : base(id)
         {
             base.Handles<FakeEvent>(OnFakeEvent);
@@ -29,11 +29,14 @@ namespace Infrastructure.Tests
         public void IncrementCounter()
         {
             Update(new FakeEvent());
+
+            ObjectFactory.GetInstance<IEventSourcedRepository<FakeEventSource>>().Save(this);
         }
 
         public void GoToTheBar()
         {
             Update(new BarEvent());
+            ObjectFactory.GetInstance<IEventSourcedRepository<FakeEventSource>>().Save(this);
         }
 
         private void OnBarEvent(BarEvent obj)
@@ -149,6 +152,10 @@ namespace Infrastructure.Tests
         {
             var m = mocks.Create<IEventSourcedRepository<FakeEventSource>>(MockBehavior.Loose);
             _eventRepos = m.Object;
+
+            var container = new UnityContainer();
+            container.RegisterType(typeof (IEventSourcedRepository<>), _eventRepos.GetType(), new InjectionFactory(c => _eventRepos));
+            ObjectFactory.Initialize(container);
         }
 
         [Fact]
@@ -159,16 +166,22 @@ namespace Infrastructure.Tests
 
             m.Setup(x => x.Save(It.IsAny<FakeEventSource>())).Callback(() => Thread.Sleep(1000));
             sut.IncrementCounter();
+            
+            /* 
+            * One way to do it is to subscribe to an event and call save from there.
+            
             var sub = sut.SyndicateEvent<FakeEvent>(x =>
                                                         {
                                                             Console.WriteLine("Save");
                                                             _eventRepos.Save(sut);
-                                                        });
+                                                        }); */
+
+            /* For now though, we'll let the EventSourced take care of that */
 
             sut.IncrementCounter();
             
             Assert.True(initialVersion == (sut.Version - 2));
-            m.Verify(x => x.Save(sut), Times.Exactly(1));
+            m.Verify(x => x.Save(sut), Times.Exactly(2));
         }
     }
 

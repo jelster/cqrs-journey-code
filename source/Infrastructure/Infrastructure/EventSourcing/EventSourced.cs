@@ -81,7 +81,7 @@ namespace Infrastructure.EventSourcing
         {
             foreach (var versionedEvent in pastEvents)
             {
-                Apply(versionedEvent, false);
+                Apply(versionedEvent);
             }
         }
 
@@ -100,17 +100,13 @@ namespace Infrastructure.EventSourcing
             e.Version = this.version + 1;
             pendingEvents.Add(e);
             Apply(e);
+            eventSubject.OnNext(e);
         }
 
-        private void Apply(IVersionedEvent e, bool notifySubscribers = true)
+        private void Apply(IVersionedEvent e)
         {
             this.handlers[e.GetType()].Invoke(e);
             this.version = e.Version;
-            
-            if (notifySubscribers)
-            {
-                eventSubject.OnNext(e);
-            }
         }
     }
 }
