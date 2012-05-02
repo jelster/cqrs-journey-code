@@ -9,18 +9,19 @@ using System.Reactive.Linq;
 using System.Threading;
 using Infrastructure.EventSourcing;
 using Infrastructure.Messaging;
+using Infrastructure.Tests;
 using Microsoft.Practices.Unity;
 using Moq;
 using Xunit;
 
 namespace Infrastructure.Tests
 {
-    public class FakeEventSource : EventSourced
+    public class TestEventSource : EventSourced<TestEventSource>
     {
         public int numberOfFakeEventsRaised { get; private set; }
         public int numberOfBarEventsRaised { get; private set; }
 
-        public FakeEventSource(Guid id) : base(id)
+        public TestEventSource(Guid id) : base(id)
         {
             base.Handles<FakeEvent>(OnFakeEvent);
             base.Handles<BarEvent>(OnBarEvent);
@@ -29,14 +30,13 @@ namespace Infrastructure.Tests
         public void IncrementCounter()
         {
             Update(new FakeEvent());
-
-            ObjectFactory.GetInstance<IEventSourcedRepository<FakeEventSource>>().Save(this);
+            Save();
         }
 
         public void GoToTheBar()
         {
             Update(new BarEvent());
-            ObjectFactory.GetInstance<IEventSourcedRepository<FakeEventSource>>().Save(this);
+            Save();
         }
 
         private void OnBarEvent(BarEvent obj)
@@ -50,14 +50,28 @@ namespace Infrastructure.Tests
         }
     }
 
-    public class FakeEvent : VersionedEvent{}
+    public class FakeEvent : VersionedEvent
+    {
+    }
 
-    public class BarEvent : VersionedEvent{}
+    public class BarEvent : VersionedEvent
+    {
+    }
 
     public class given_an_event_source
     {
-        private readonly FakeEventSource sut = new FakeEventSource(Guid.NewGuid());
-        
+        protected readonly TestEventSource sut; 
+
+        public given_an_event_source()
+        {
+            TestStartup.Configure(sut);
+            sut = new TestEventSource(Guid.NewGuid());
+        }
+    }
+
+    public class when_events_occur : given_an_event_source
+    {
+
         [Fact]
         public void when_blocking_method_called_on_events_doesnt_block()
         {
@@ -125,10 +139,10 @@ namespace Infrastructure.Tests
         [Fact]
         public void when_syndicated_subscribers_subscribe_should_not_receive_notifications_from_before_subscription()
         {
-            List<IEvent> received = new List<IEvent>();
+            var received = new List<IEvent>();
             sut.IncrementCounter();
             sut.GoToTheBar();
-            
+
             var sub = sut.SyndicateEvent<FakeEvent>(received.Add);
 
             sut.IncrementCounter();
@@ -136,40 +150,22 @@ namespace Infrastructure.Tests
             Assert.Equal(1, received.Count);
             Assert.Equal(2, sut.numberOfFakeEventsRaised);
             Assert.Equal(1, sut.numberOfBarEventsRaised);
-            
+
             sub.Dispose();
         }
     }
 
-    public class given_an_event_repository_and_event_source
+
+    public class when_event_published : given_an_event_source
     {
-        private IEventSourcedRepository<FakeEventSource> _eventRepos;
-        private MockRepository mocks = new MockRepository(MockBehavior.Loose);
-
-        private readonly FakeEventSource sut = new FakeEventSource(Guid.NewGuid());
-
-        public given_an_event_repository_and_event_source()
-        {
-            var m = mocks.Create<IEventSourcedRepository<FakeEventSource>>(MockBehavior.Loose);
-            _eventRepos = m.Object;
-
-            var container = new UnityContainer();
-            container.RegisterType(typeof (IEventSourcedRepository<>), _eventRepos.GetType(), new InjectionFactory(c => _eventRepos));
-            ObjectFactory.Initialize(container);
-        }
-
         [Fact]
         public void when_event_is_published_repository_persists_data()
         {
-            var m = Mock.Get(_eventRepos);
             var initialVersion = sut.Version;
-
-            m.Setup(x => x.Save(It.IsAny<FakeEventSource>())).Callback(() => Thread.Sleep(1000));
             sut.IncrementCounter();
-            
+
             /* 
-            * One way to do it is to subscribe to an event and call save from there.
-            
+            * One way to do it is to subscribe to an event and call save from there.            
             var sub = sut.SyndicateEvent<FakeEvent>(x =>
                                                         {
                                                             Console.WriteLine("Save");
@@ -179,11 +175,10 @@ namespace Infrastructure.Tests
             /* For now though, we'll let the EventSourced take care of that */
 
             sut.IncrementCounter();
-            
             Assert.True(initialVersion == (sut.Version - 2));
-            m.Verify(x => x.Save(sut), Times.Exactly(2));
+            
+            Assert.True(sut.Events.Count() == 2);
+            Assert.True(sut.numberOfFakeEventsRaised == 2);
         }
     }
-
-    
 }

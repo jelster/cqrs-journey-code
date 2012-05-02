@@ -24,6 +24,25 @@ namespace Infrastructure.EventSourcing
     using System.Collections.Generic;
     using Messaging;
 
+    public abstract class EventSourced<T> : EventSourced where T : EventSourced<T>
+    {
+        protected IEventSourcedRepository<T> Context { get; private set; }
+ 
+        protected EventSourced(Guid id) : base(id)
+        {
+            Context = GetContext();
+        }
+
+        protected virtual void Save()
+        {
+            Context.Save((T) this);
+        }
+
+        protected IEventSourcedRepository<T> GetContext()
+        {
+            return ObjectFactory.GetInstance<IEventSourcedRepository<T>>();
+        }
+    }
     public abstract class EventSourced : IEventSourced
     {
         private readonly ISubject<IVersionedEvent> eventSubject = new ReplaySubject<IVersionedEvent>(Scheduler.Immediate); // TODO: should a buffer size be set here? 
@@ -85,9 +104,12 @@ namespace Infrastructure.EventSourcing
             }
         }
 
+        
+
         protected void Update(VersionedEvent e)
         {
             UpdateCore(e);
+            eventSubject.OnNext(e);
         }
 
         /// <summary>
@@ -100,7 +122,7 @@ namespace Infrastructure.EventSourcing
             e.Version = this.version + 1;
             pendingEvents.Add(e);
             Apply(e);
-            eventSubject.OnNext(e);
+           
         }
 
         private void Apply(IVersionedEvent e)

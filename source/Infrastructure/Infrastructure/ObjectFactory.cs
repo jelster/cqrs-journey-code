@@ -15,10 +15,16 @@ namespace Infrastructure
             _container = container;
         }
         
+        public static object GetInstance(Type objectType)
+        {
+            ThrowIfNotInitialized();
+            return _container.Resolve(objectType);
+        }
+
         public static T GetInstance<T>()
         {
             ThrowIfNotInitialized();
-            return _container.Resolve<T>();
+            return (T) GetInstance(typeof (T));
         }
 
         public static IEnumerable<T> GetAllInstances<T>()
@@ -29,7 +35,7 @@ namespace Infrastructure
 
         public static void Reset()
         {
-            ThrowIfNotInitialized();
+            if (_container == null) return;
 
             lock (_container)
             {
