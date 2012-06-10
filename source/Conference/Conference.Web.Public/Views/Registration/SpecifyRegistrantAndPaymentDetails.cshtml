@@ -1,4 +1,5 @@
 ﻿@model Conference.Web.Public.Models.RegistrationViewModel
+
 @{
     ViewBag.Title = "Register to " + ViewBag.Conference.Name;
 }
@@ -6,43 +7,21 @@
 {
 }
 
-<h1 class="page__head page__wrapper"> @*TODO extract into partial view*@
-    @ViewBag.Conference.Name
-    <br /><span class="page__head-note">(Experience & Practice)</span>
-</h1>
+@ConferenceHelpers.ConferenceTitle(ViewBag.Conference.Name, ViewBag.Conference.Tagline)
+
 <div class="page__content">
     <div class="page__wrapper content-main content-main_register">
         <div class="content-main__wrapper">
             <div class="content-main__main">
                 <div class="content-main__header">Seats information</div>
                 <div class="content">
-                    <table class="content__table_first-cell-wide">
-                        <tr>
-                            <th style="width: 75%">Registration type</th>
-                            <th scope="col" style="text-align: right">Price</th>
-                            <th scope="col">Quantity</th>
-                            <th scope="col">Total</th>
-                        </tr>
-                        @for (var i = 0; i < this.Model.Order.Items.Count; i++)
-                        {
-                            <tr>
-                                <td>@Html.DisplayFor(model => model.Order.Items[i].SeatTypeDescription)</td>
-                                <td style="text-align: right">$@Html.DisplayFor(model => model.Order.Items[i].Price)</td>
-                                <td>@Html.DisplayFor(model => model.Order.Items[i].Quantity)</td>
-                                <td>@Html.DisplayFor(model => model.Order.Items[i].Total)</td>
-                            </tr>
-                        }
-                        <tr>
-                            <td></td>
-                            <td></td>
-                            <td class="content__table-cell_right content__cell_total">Total:</td>
-                            <td class="content__cell_total content__table-cell_left">$@Html.DisplayFor(model => model.Order.Total)</td>
-                        </tr>
-                    </table>
+                    @Html.Partial("_OrderDetails", this.Model.Order)
                 </div>
                 @using (Html.BeginForm())
                 {
                     @Html.Partial("_RegistrationDetailsEditor", Model.RegistrantDetails)
+                    if (!Model.Order.IsFreeOfCharge)
+                    { 
                     <div class="content-main__header">Billing information</div>
                     <div class="content">
                         <div class="form">
@@ -52,7 +31,7 @@
                                     @Html.RadioButton("paymentType", "thirdParty", true) Credit card
                                 </label>
                                 <label class="form__rb__item js-radiobutton" name="js-invoiceme">
-                                    @Html.RadioButton("paymentType", "invoice") Invoice me
+                                    @Html.RadioButton("paymentType", "invoice", new { disabled = "disabled" }) Invoice me
                                 </label>
 						    </fieldset>
 					    </div>
@@ -111,33 +90,23 @@
 						    <div class="g-clear"></div>
                         </div>
                     </div>
+                    }
                     <div class="nav content-main__nav">
-                        <a class="nav__left" href="javascript:history.go(-1)">Back</a>
+                        <a class="nav__left" href="@Url.Action("StartRegistration", "Registration", new { orderId = this.Model.Order.OrderId })">Back</a>
                         <button id="Next" class="nav__right" type="submit">Proceed
+                    @if (!Model.Order.IsFreeOfCharge)
+                    { 
                             <span class="nav__right-small js-creditcard-proceed">Proceed to Third Party</span>
                             <span class="nav__right-small js-invoiceme-proceed" style="display: none;">Proceed to Pay by Invoice</span>
-                        </button> @*TODO: Fix alignment*@
-@*                        <a class="nav__right" href="#">
-                            Proceed
-                            <span class="nav__right-small js-creditcard-proceed">Proceed to PayPal</span>
-                            <span class="nav__right-small js-invoiceme-proceed" style="display: none;">Proceed to Pay by Invoice</span>
-                        </a>*@
+                    }
+                        </button>
                     </div>
                 }
             </div>
         </div>
         <div class="content-main__aside">
             <div class="content-main__header"></div>
-			<div id="countdown" class="reg-time-info">
-				<div id="countdown_time" data-targetDate="@DateTimeExtensions.ToEpochMilliseconds(this.ViewBag.ExpirationDateUTC)" class="reg-time-info__title">
-					7:18
-				</div>
-				<div  id="countdown_warning" class="reg-time-info__txt">
-					<p>
-						Please complete registration within 15:00 minutes. After 15:00 minutes, the reservation we're holding will be released to others.
-					</p>
-				</div>
-			</div>
+            @ConferenceHelpers.ExpirationBox(Model.Order.ReservationExpirationDate.ToEpochMilliseconds(), Url.Action("ShowExpiredOrder", "Registration", new { conferenceCode = this.ViewBag.Conference.Code, orderId = this.Model.RegistrantDetails.OrderId }))
         </div>
         <div class="g-clear"></div>
     </div>
@@ -146,18 +115,6 @@
 @section Scripts
 {
 <script type="text/javascript" src="@Url.Content("~/Content/form/form.js")"></script>
-<script type="text/javascript" src="@Url.Content("~/Scripts/Conference.js")"></script>
 <script type="text/javascript" src="@Url.Content("~/Content/reg-time-info/reg-time-info.js")"></script>
-<script type="text/javascript">
-
-    function reservationTimedOut() {
-        window.location = '@Url.Action("DisplayOrderStatus", "Registration", new { conferenceCode = this.ViewBag.Conference.Code, orderId = this.Model.RegistrantDetails.OrderId })';
-    }
-
-    $(document).ready(function () {
-        Conference.StartTimer('countdown_time', reservationTimedOut);
-    });
-
-</script>
 }
 

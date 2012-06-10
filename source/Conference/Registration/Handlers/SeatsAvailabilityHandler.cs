@@ -13,7 +13,6 @@
 
 namespace Registration.Handlers
 {
-    using Conference;
     using Infrastructure.EventSourcing;
     using Infrastructure.Messaging.Handling;
     using Registration.Commands;
@@ -25,8 +24,8 @@ namespace Registration.Handlers
         ICommandHandler<MakeSeatReservation>,
         ICommandHandler<CancelSeatReservation>,
         ICommandHandler<CommitSeatReservation>,
-        IEventHandler<SeatsAdded>,
-        IEventHandler<SeatsRemoved>
+        ICommandHandler<AddSeats>,
+        ICommandHandler<RemoveSeats>
     {
         private readonly IEventSourcedRepository<SeatsAvailability> repository;
 
@@ -37,57 +36,46 @@ namespace Registration.Handlers
 
         public void Handle(MakeSeatReservation command)
         {
-            var availability = this.repository.Find(command.ConferenceId);
-            if (availability != null)
-            {
-                availability.MakeReservation(command.ReservationId, command.Seats);
-                this.repository.Save(availability);
-            }
-            // TODO: what if there's no aggregate? how do we tell the process?
+            // TODO: what if there's no aggregate? how do we tell the registration process?
+            var availability = this.repository.Get(command.ConferenceId);
+            availability.MakeReservation(command.ReservationId, command.Seats);
+            this.repository.Save(availability, command.Id.ToString());
         }
 
         public void Handle(CancelSeatReservation command)
         {
-            var availability = this.repository.Find(command.ConferenceId);
-            if (availability != null)
-            {
-                availability.CancelReservation(command.ReservationId);
-                this.repository.Save(availability);
-            }
-            // TODO: what if there's no aggregate? how do we tell the process?
+            var availability = this.repository.Get(command.ConferenceId);
+            availability.CancelReservation(command.ReservationId);
+            this.repository.Save(availability, command.Id.ToString());
         }
 
         public void Handle(CommitSeatReservation command)
         {
+            var availability = this.repository.Get(command.ConferenceId);
+            availability.CommitReservation(command.ReservationId);
+            this.repository.Save(availability, command.Id.ToString());
+        }
+
+        // Commands created from events from the conference BC
+
+        public void Handle(AddSeats command)
+        {
             var availability = this.repository.Find(command.ConferenceId);
-            if (availability != null)
-            {
-                availability.CommitReservation(command.ReservationId);
-                this.repository.Save(availability);
-            }
-            // TODO: what if there's no aggregate? how do we tell the process?
+            if (availability == null)
+                availability = new SeatsAvailability(command.ConferenceId);
+
+            availability.AddSeats(command.SeatType, command.Quantity);
+            this.repository.Save(availability, command.Id.ToString());
         }
 
-        // Events from the conference BC
-
-        public void Handle(SeatsAdded @event)
+        public void Handle(RemoveSeats command)
         {
-            var availability = this.repository.Find(@event.ConferenceId);
+            var availability = this.repository.Find(command.ConferenceId);
             if (availability == null)
-                availability = new SeatsAvailability(@event.ConferenceId);
+                availability = new SeatsAvailability(command.ConferenceId);
 
-            availability.AddSeats(@event.SourceId, @event.AddedQuantity);
-            this.repository.Save(availability);
-        }
-
-        public void Handle(SeatsRemoved @event)
-        {
-            var availability = this.repository.Find(@event.ConferenceId);
-            if (availability == null)
-                availability = new SeatsAvailability(@event.ConferenceId);
-
-            availability.RemoveSeats(@event.SourceId, @event.RemovedQuantity);
-            this.repository.Save(availability);
+            availability.RemoveSeats(command.SeatType, command.Quantity);
+            this.repository.Save(availability, command.Id.ToString());
         }
     }
 }

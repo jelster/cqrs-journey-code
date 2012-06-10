@@ -18,13 +18,51 @@ namespace Conference
     using System.Collections.ObjectModel;
     using System.ComponentModel.DataAnnotations;
     using Common.Utils;
+    using Conference.Properties;
 
-    public class ConferenceInfo
+    /// <summary>
+    /// Editable information about a conference.
+    /// </summary>
+    public class EditableConferenceInfo
+    {
+        [Required(AllowEmptyStrings = false)]
+        public string Name { get; set; }
+
+        [Required(AllowEmptyStrings = false)]
+        public string Description { get; set; }
+
+        [Required(AllowEmptyStrings = false)]
+        public string Location { get; set; }
+
+        public string Tagline { get; set; }
+        public string TwitterSearch { get; set; }
+
+        [DisplayFormat(ApplyFormatInEditMode = true, DataFormatString = "{0:yyyy/MM/dd}")]
+        [Display(Name = "Start")]
+        public DateTime StartDate { get; set; }
+
+        [DisplayFormat(ApplyFormatInEditMode = true, DataFormatString = "{0:yyyy/MM/dd}")]
+        [Display(Name = "End")]
+        public DateTime EndDate { get; set; }
+
+        [Display(Name = "Is Published?")]
+        public bool IsPublished { get; set; }
+    }
+
+    /// <summary>
+    /// The full conference information.
+    /// </summary>
+    /// <remarks>
+    /// This class inherits from <see cref="EditableConferenceInfo"/> 
+    /// and exposes more information that is not user-editable once 
+    /// it has been generated or provided.
+    /// </remarks>
+    public class ConferenceInfo : EditableConferenceInfo
     {
         public ConferenceInfo()
         {
             this.Id = Guid.NewGuid();
-            this.Seats = new ObservableCollection<SeatInfo>();
+            this.Seats = new ObservableCollection<SeatType>();
             this.AccessCode = HandleGenerator.Generate(6);
         }
 
@@ -39,30 +77,15 @@ namespace Conference
 
         [Display(Name = "Email")]
         [Required(AllowEmptyStrings = false)]
+        [RegularExpression(@"[\w-]+(\.?[\w-])*\@[\w-]+(\.[\w-]+)+", ErrorMessageResourceType = typeof(Resources), ErrorMessageResourceName = "InvalidEmail")]
         public string OwnerEmail { get; set; }
 
         [Required(AllowEmptyStrings = false)]
-        public string Name { get; set; }
-
-        [Required(AllowEmptyStrings = false)]
-        public string Description { get; set; }
-
-        [Required(AllowEmptyStrings = false)]
+        [RegularExpression(@"^\w+$", ErrorMessageResourceType = typeof(Resources), ErrorMessageResourceName = "InvalidSlug")]
         public string Slug { get; set; }
-
-        [DisplayFormat(ApplyFormatInEditMode = true, DataFormatString = "{0:yyyy/MM/dd}")]
-        [Display(Name = "Start")]
-        public DateTime StartDate { get; set; }
-
-        [DisplayFormat(ApplyFormatInEditMode = true, DataFormatString = "{0:yyyy/MM/dd}")]
-        [Display(Name = "End")]
-        public DateTime EndDate { get; set; }
-
-        [Display(Name = "Is Published?")]
-        public bool IsPublished { get; set; }
 
         public bool WasEverPublished { get; set; }
 
-        public ICollection<SeatInfo> Seats { get; set; }
+        public ICollection<SeatType> Seats { get; set; }
     }
 }

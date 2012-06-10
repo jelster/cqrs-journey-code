@@ -16,7 +16,6 @@ namespace Infrastructure.Azure.Messaging
     using System;
     using System.Collections.Generic;
     using System.IO;
-    using System.Linq;
     using Infrastructure.Messaging;
     using Infrastructure.Serialization;
     using Microsoft.ServiceBus.Messaging;
@@ -27,16 +26,16 @@ namespace Infrastructure.Azure.Messaging
     public class CommandBus : ICommandBus
     {
         private readonly IMessageSender sender;
-        private readonly IMetadataProvider metadata;
-        private ISerializer serializer;
+        private readonly IMetadataProvider metadataProvider;
+        private ITextSerializer serializer;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CommandBus"/> class.
         /// </summary>
-        public CommandBus(IMessageSender sender, IMetadataProvider metadata, ISerializer serializer)
+        public CommandBus(IMessageSender sender, IMetadataProvider metadataProvider, ITextSerializer serializer)
         {
             this.sender = sender;
-            this.metadata = metadata;
+            this.metadataProvider = metadataProvider;
             this.serializer = serializer;
         }
 
@@ -45,33 +44,53 @@ namespace Infrastructure.Azure.Messaging
         /// </summary>
         public void Send(Envelope<ICommand> command)
         {
-            var message = BuildMessage(command);
-
-            this.sender.Send(message);
+            this.sender.Send(() => BuildMessage(command));
         }
 
         public void Send(IEnumerable<Envelope<ICommand>> commands)
         {
-            var messages = commands.Select(command => BuildMessage(command));
-
-            this.sender.Send(messages);
+            foreach (var command in commands)
+            {
+                this.Send(command);
+            }
         }
 
         private BrokeredMessage BuildMessage(Envelope<ICommand> command)
         {
             var stream = new MemoryStream();
-            this.serializer.Serialize(stream, command.Body);
+            var writer = new StreamWriter(stream);
+            this.serializer.Serialize(writer, command.Body);
             stream.Position = 0;
 
             var message = new BrokeredMessage(stream, true);
 
-            foreach (var pair in this.metadata.GetMetadata(command.Body))
+            if (!string.IsNullOrWhiteSpace(command.MessageId))
             {
-                message.Properties[pair.Key] = pair.Value;
+                message.MessageId = command.MessageId;
+            }
+            else if (!default(Guid).Equals(command.Body.Id))
+            {
+                message.MessageId = command.Body.Id.ToString();
+            }
+
+            if (!string.IsNullOrWhiteSpace(command.CorrelationId))
+            {
+                message.CorrelationId = command.CorrelationId;
+            }
+
+            var metadata = this.metadataProvider.GetMetadata(command.Body);
+            if (metadata != null)
+            {
+                foreach (var pair in metadata)
+                {
+                    message.Properties[pair.Key] = pair.Value;
+                }
             }
 
             if (command.Delay != TimeSpan.Zero)
+            {
                 message.ScheduledEnqueueTimeUtc = DateTime.UtcNow.Add(command.Delay);
+            }
 
             return message;
         }

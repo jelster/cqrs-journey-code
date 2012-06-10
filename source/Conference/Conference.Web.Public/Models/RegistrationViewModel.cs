@@ -14,10 +14,11 @@
 namespace Conference.Web.Public.Models
 {
     using Registration.Commands;
+    using Registration.ReadModel;
 
     public class RegistrationViewModel
     {
-        public OrderViewModel Order { get; set; }
+        public PricedOrder Order { get; set; }
 
         public AssignRegistrantDetails RegistrantDetails { get; set; }
     }

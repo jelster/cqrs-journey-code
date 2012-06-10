@@ -16,6 +16,7 @@ namespace Registration
     using System;
     using System.Collections.Generic;
     using System.ComponentModel.DataAnnotations;
+    using System.Diagnostics;
     using System.Linq;
     using Infrastructure.Messaging;
     using Infrastructure.Processes;
@@ -25,11 +26,14 @@ namespace Registration
 
     public class RegistrationProcess : IProcess
     {
+        private static readonly TimeSpan BufferTimeBeforeReleasingSeatsAfterExpiration = TimeSpan.FromMinutes(14);
+
         public enum ProcessState
         {
             NotStarted = 0,
             AwaitingReservationConfirmation = 1,
-            AwaitingPayment = 2,
+            ReservationConfirmationReceived = 2,
+            PaymentConfirmationReceived = 3,
         }
 
         private readonly List<Envelope<ICommand>> commands = new List<Envelope<ICommand>>();
@@ -44,6 +48,7 @@ namespace Registration
         public Guid ConferenceId { get; set; }
         public Guid OrderId { get; internal set; }
         public Guid ReservationId { get; internal set; }
+        public Guid SeatReservationCommandId { get; internal set; }
 
         // feels akward and possibly disrupting to store these properties here. Would it be better if instead of using 
         // current state values, we use event sourcing?
@@ -58,6 +63,10 @@ namespace Registration
             internal set { this.StateValue = (int)value; }
         }
 
+        [ConcurrencyCheck]
+        [Timestamp]
+        public byte[] TimeStamp { get; private set; }
+
         public IEnumerable<Envelope<ICommand>> Commands
         {
             get { return this.commands; }
@@ -69,76 +78,108 @@ namespace Registration
             {
                 this.ConferenceId = message.ConferenceId;
                 this.OrderId = message.SourceId;
-                this.ReservationId = Guid.NewGuid();
+                // Use the order id as an opaque reservation id for the seat reservation. 
+                // It could be anything else, as long as it is deterministic from the OrderPlaced event.
+                this.ReservationId = message.SourceId;
                 this.ReservationAutoExpiration = message.ReservationAutoExpiration;
                 this.State = ProcessState.AwaitingReservationConfirmation;
 
-                this.AddCommand(
+                var seatReservationCommand =
                     new MakeSeatReservation
-                    {
-                        ConferenceId = message.ConferenceId,
-                        ReservationId = this.ReservationId,
-                        Seats = message.Seats.ToList()
-                    });
-            }
-            else
-            {
-                throw new InvalidOperationException();
-            }
-        }
-
-        public void Handle(SeatsReserved message)
-        {
-            if (this.State == ProcessState.AwaitingReservationConfirmation)
-            {
-                var bufferTime = TimeSpan.FromMinutes(5);
-                var expirationTime = this.ReservationAutoExpiration.Value;
-                
-                this.State = ProcessState.AwaitingPayment;
-
-                var expirationCommand = new ExpireRegistrationProcess { ProcessId = this.Id };
-                this.ExpirationCommandId = expirationCommand.Id;
-
-                this.AddCommand(new Envelope<ICommand>(expirationCommand)
-                {
-                    Delay = expirationTime.Subtract(DateTime.UtcNow).Add(bufferTime),
-                });
-                this.AddCommand(new MarkSeatsAsReserved
-                {
-                    OrderId = this.OrderId,
-                    Seats = message.ReservationDetails.ToList(),
-                    Expiration = expirationTime,
-                });
-            }
-            else
-            {
-                throw new InvalidOperationException();
-            }
-        }
-
-        public void Handle(ExpireRegistrationProcess message)
-        {
-            if (this.State == ProcessState.AwaitingPayment)
-            {
-                if (this.ExpirationCommandId == message.Id)
-                {
-                    this.Completed = true;
-
-                    this.AddCommand(new CancelSeatReservation
                     {
                         ConferenceId = this.ConferenceId,
                         ReservationId = this.ReservationId,
-                    });
-                    this.AddCommand(new RejectOrder { OrderId = this.OrderId });
+                        Seats = message.Seats.ToList()
+                    };
+                this.SeatReservationCommandId = seatReservationCommand.Id;
+                this.AddCommand(seatReservationCommand);
+
+                var expirationCommand = new ExpireRegistrationProcess { ProcessId = this.Id };
+                this.ExpirationCommandId = expirationCommand.Id;
+                this.AddCommand(new Envelope<ICommand>(expirationCommand)
+                {
+                    Delay = message.ReservationAutoExpiration.Subtract(DateTime.UtcNow).Add(BufferTimeBeforeReleasingSeatsAfterExpiration),
+                });
+            }
+            else
+            {
+                if (message.ConferenceId != this.ConferenceId)
+                {
+                    // throw only if not reprocessing
+                    throw new InvalidOperationException();
                 }
             }
-
-            // else ignore the message as it is no longer relevant (but not invalid)
         }
 
-        public void Handle(PaymentCompleted message)
+        public void Handle(OrderUpdated message)
         {
-            if (this.State == ProcessState.AwaitingPayment)
+            if (this.State == ProcessState.AwaitingReservationConfirmation
+                || this.State == ProcessState.ReservationConfirmationReceived)
+            {
+                this.State = ProcessState.AwaitingReservationConfirmation;
+
+                var seatReservationCommand =
+                    new MakeSeatReservation
+                    {
+                        ConferenceId = this.ConferenceId,
+                        ReservationId = this.ReservationId,
+                        Seats = message.Seats.ToList()
+                    };
+                this.SeatReservationCommandId = seatReservationCommand.Id;
+                this.AddCommand(seatReservationCommand);
+            }
+            else
+            {
+                throw new InvalidOperationException("The order cannot be updated at this stage.");
+            }
+        }
+
+        public void Handle(Envelope<SeatsReserved> envelope)
+        {
+            if (this.State == ProcessState.AwaitingReservationConfirmation)
+            {
+                if (envelope.CorrelationId != null)
+                {
+                    if (string.CompareOrdinal(this.SeatReservationCommandId.ToString(), envelope.CorrelationId) != 0)
+                    {
+                        // skip this event
+                        Trace.TraceWarning("Seat reservation response for reservation id {0} does not match the expected correlation id.", envelope.Body.ReservationId);
+                        return;
+                    }
+                }
+
+                this.State = ProcessState.ReservationConfirmationReceived;
+                this.SeatReservationCommandId = Guid.Empty;
+
+                this.AddCommand(new MarkSeatsAsReserved
+                {
+                    OrderId = this.OrderId,
+                    Seats = envelope.Body.ReservationDetails.ToList(),
+                    Expiration = this.ReservationAutoExpiration.Value,
+                });
+            }
+            else
+            {
+                throw new InvalidOperationException("Cannot handle seat reservation at this stage.");
+            }
+        }
+
+        public void Handle(PaymentCompleted @event)
+        {
+            if (this.State == ProcessState.ReservationConfirmationReceived)
+            {
+                this.State = ProcessState.PaymentConfirmationReceived;
+                this.AddCommand(new ConfirmOrder { OrderId = this.OrderId });
+            }
+            else
+            {
+                throw new InvalidOperationException("Cannot handle payment confirmation at this stage.");
+            }
+        }
+
+        public void Handle(OrderConfirmed @event)
+        {
+            if (this.State == ProcessState.ReservationConfirmationReceived || this.State == ProcessState.PaymentConfirmationReceived)
             {
                 this.ExpirationCommandId = Guid.Empty;
                 this.Completed = true;
@@ -148,16 +189,30 @@ namespace Registration
                     ReservationId = this.ReservationId,
                     ConferenceId = this.ConferenceId
                 });
-
-                this.AddCommand(new ConfirmOrderPayment
-                {
-                    OrderId = message.PaymentSourceId
-                });
             }
             else
             {
-                throw new InvalidOperationException();
+                throw new InvalidOperationException("Cannot handle order confirmation at this stage.");
             }
+        }
+
+        public void Handle(ExpireRegistrationProcess command)
+        {
+            if (this.ExpirationCommandId == command.Id)
+            {
+                this.Completed = true;
+
+                this.AddCommand(new CancelSeatReservation
+                {
+                    ConferenceId = this.ConferenceId,
+                    ReservationId = this.ReservationId,
+                });
+                this.AddCommand(new RejectOrder { OrderId = this.OrderId });
+
+                // TODO cancel payment if any
+            }
+
+            // else ignore the message as it is no longer relevant (but not invalid)
         }
 
         private void AddCommand<T>(T command)

@@ -22,13 +22,7 @@ namespace Payments.ReadModel.Implementation
     /// </summary>
     public class PaymentsReadDbContext : DbContext
     {
-        public PaymentsReadDbContext()
-            // NOTE: by default, we point to the same database 
-            // as the aggregates because we're using SQL views, 
-            // but of course it could be a separate one.
-            : this("Payments")
-        {
-        }
+        public const string SchemaName = Payments.Database.PaymentsDbContext.SchemaName;
 
         public PaymentsReadDbContext(string nameOrConnectionString)
             : base(nameOrConnectionString)
@@ -39,10 +33,7 @@ namespace Payments.ReadModel.Implementation
         {
             base.OnModelCreating(modelBuilder);
 
-            // Make the name of the views match exactly the name of the corresponding property.
-            modelBuilder.Entity<ThirdPartyProcessorPaymentDetailsDTO>().ToTable("ThirdPartyProcessorPaymentDetailsView");
-            // modelBuilder.Entity<OrderDTO>().HasMany(c => c.Lines).WithRequired().Map(c => c.MapKey("OrdersView_Id"));
-            //modelBuilder.Entity<PaymentItemDTO>().ToTable("PaymentItemView");
+            modelBuilder.Entity<ThirdPartyProcessorPaymentDetails>().ToTable("ThirdPartyProcessorPaymentDetailsView", SchemaName);
         }
 
         public T Find<T>(Guid id) where T : class

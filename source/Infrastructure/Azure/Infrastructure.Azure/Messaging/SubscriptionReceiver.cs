@@ -14,8 +14,11 @@
 namespace Infrastructure.Azure.Messaging
 {
     using System;
+    using System.Diagnostics;
     using System.Threading;
     using System.Threading.Tasks;
+    using Microsoft.Practices.EnterpriseLibrary.WindowsAzure.TransientFaultHandling.ServiceBus;
+    using Microsoft.Practices.TransientFaultHandling;
     using Microsoft.ServiceBus;
     using Microsoft.ServiceBus.Messaging;
 
@@ -27,11 +30,13 @@ namespace Infrastructure.Azure.Messaging
     {
         private readonly TokenProvider tokenProvider;
         private readonly Uri serviceUri;
-        private readonly MessagingSettings settings;
+        private readonly ServiceBusSettings settings;
+        private readonly string topic;
+        private string subscription;
+        private readonly object lockObject = new object();
+        private readonly Microsoft.Practices.TransientFaultHandling.RetryPolicy receiveRetryPolicy;
         private CancellationTokenSource cancellationSource;
         private SubscriptionClient client;
-        private string subscription;
-        private object lockObject = new object();
 
         /// <summary>
         /// Event raised whenever a message is received. Consumer of 
@@ -44,9 +49,23 @@ namespace Infrastructure.Azure.Messaging
         /// Initializes a new instance of the <see cref="SubscriptionReceiver"/> class, 
         /// automatically creating the topic and subscription if they don't exist.
         /// </summary>
-        public SubscriptionReceiver(MessagingSettings settings, string topic, string subscription)
+        public SubscriptionReceiver(ServiceBusSettings settings, string topic, string subscription)
+            : this(
+                settings,
+                topic,
+                subscription,
+                new ExponentialBackoff(10, TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(1)))
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SubscriptionReceiver"/> class, 
+        /// automatically creating the topic and subscription if they don't exist.
+        /// </summary>
+        protected SubscriptionReceiver(ServiceBusSettings settings, string topic, string subscription, RetryStrategy backgroundRetryStrategy)
         {
             this.settings = settings;
+            this.topic = topic;
             this.subscription = subscription;
 
             this.tokenProvider = TokenProvider.CreateSharedSecretTokenProvider(settings.TokenIssuer, settings.TokenAccessKey);
@@ -54,27 +73,14 @@ namespace Infrastructure.Azure.Messaging
 
             var messagingFactory = MessagingFactory.Create(this.serviceUri, tokenProvider);
             this.client = messagingFactory.CreateSubscriptionClient(topic, subscription);
+            this.client.PrefetchCount = 40;
 
-            var manager = new NamespaceManager(this.serviceUri, this.tokenProvider);
-
-            try
-            {
-                manager.CreateTopic(
-                    new TopicDescription(topic)
-                    {
-                        RequiresDuplicateDetection = true,
-                        DuplicateDetectionHistoryTimeWindow = TimeSpan.FromMinutes(30)
-                    });
-            }
-            catch (MessagingEntityAlreadyExistsException)
-            { }
-
-            try
-            {
-                manager.CreateSubscription(topic, subscription);
-            }
-            catch (MessagingEntityAlreadyExistsException)
-            { }
+            this.receiveRetryPolicy = new RetryPolicy<ServiceBusTransientErrorDetectionStrategy>(backgroundRetryStrategy);
+            this.receiveRetryPolicy.Retrying +=
+                (s, e) =>
+                {
+                    Trace.TraceError("An error occurred in attempt number {1} to receive a message: {0}", e.LastException.Message, e.CurrentRetryCount);
+                };
         }
 
         /// <summary>
@@ -85,7 +91,11 @@ namespace Infrastructure.Azure.Messaging
             lock (this.lockObject)
             {
                 this.cancellationSource = new CancellationTokenSource();
-                Task.Factory.StartNew(() => this.ReceiveMessages(this.cancellationSource.Token), this.cancellationSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Current);
+                Task.Factory.StartNew(() =>
+                    this.ReceiveMessages(this.cancellationSource.Token),
+                    this.cancellationSource.Token,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Current);
             }
         }
 
@@ -106,7 +116,6 @@ namespace Infrastructure.Azure.Messaging
                 }
             }
         }
-
 
         /// <summary>
         /// Stops the listener if it was started previously.
@@ -134,18 +143,46 @@ namespace Infrastructure.Azure.Messaging
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                // Long polling here?
-                var message = this.client.Receive(TimeSpan.FromSeconds(10));
+                BrokeredMessage message = null;
 
-                if (message == null)
+                // NOTE: we don't long-poll more than a few seconds as 
+                // we're already on a background thread and we want to 
+                // allow other threads/processes/machines to potentially 
+                // receive messages too.
+                try
                 {
-                    Thread.Sleep(100);
-                    continue;
+                    message = this.receiveRetryPolicy.ExecuteAction<BrokeredMessage>(this.DoReceiveMessage);
+                }
+                catch (Exception e)
+                {
+                    Trace.TraceError("An unrecoverable error occurred while trying to receive a new message:\r\n{0}", e);
+
+                    throw;
                 }
 
-                if (!cancellationToken.IsCancellationRequested)
+                try
+                {
+                    if (message == null)
+                    {
+                        Thread.Sleep(100);
+                        continue;
+                    }
+
                     this.MessageReceived(this, new BrokeredMessageEventArgs(message));
+                }
+                finally
+                {
+                    if (message != null)
+                    {
+                        message.Dispose();
+                    }
+                }
             }
+        }
+
+        protected virtual BrokeredMessage DoReceiveMessage()
+        {
+            return this.client.Receive(TimeSpan.FromMinutes(1));
         }
     }
 }

@@ -15,6 +15,10 @@ namespace Infrastructure.Azure.Messaging
 {
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics;
+    using System.Threading;
+    using Microsoft.Practices.EnterpriseLibrary.WindowsAzure.TransientFaultHandling.ServiceBus;
+    using Microsoft.Practices.TransientFaultHandling;
     using Microsoft.ServiceBus;
     using Microsoft.ServiceBus.Messaging;
 
@@ -26,14 +30,25 @@ namespace Infrastructure.Azure.Messaging
     {
         private readonly TokenProvider tokenProvider;
         private readonly Uri serviceUri;
-        private readonly MessagingSettings settings;
-        private string topic;
+        private readonly ServiceBusSettings settings;
+        private readonly string topic;
+        private readonly RetryPolicy retryPolicy;
+        private readonly TopicClient topicClient;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="TopicSender"/> class, 
         /// automatically creating the given topic if it does not exist.
         /// </summary>
-        public TopicSender(MessagingSettings settings, string topic)
+        public TopicSender(ServiceBusSettings settings, string topic)
+            : this(settings, topic, new ExponentialBackoff(10, TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(1)))
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="TopicSender"/> class, 
+        /// automatically creating the given topic if it does not exist.
+        /// </summary>
+        protected TopicSender(ServiceBusSettings settings, string topic, RetryStrategy retryStrategy)
         {
             this.settings = settings;
             this.topic = topic;
@@ -41,45 +56,102 @@ namespace Infrastructure.Azure.Messaging
             this.tokenProvider = TokenProvider.CreateSharedSecretTokenProvider(settings.TokenIssuer, settings.TokenAccessKey);
             this.serviceUri = ServiceBusEnvironment.CreateServiceUri(settings.ServiceUriScheme, settings.ServiceNamespace, settings.ServicePath);
 
-            try
-            {
-                new NamespaceManager(this.serviceUri, this.tokenProvider)
-                    .CreateTopic(
-                        new TopicDescription(topic)
-                        {
-                            RequiresDuplicateDetection = true,
-                            DuplicateDetectionHistoryTimeWindow = TimeSpan.FromMinutes(30)
-                        });
-            }
-            catch (MessagingEntityAlreadyExistsException)
-            { }
+            // TODO: This could be injected.
+            this.retryPolicy = new RetryPolicy<ServiceBusTransientErrorDetectionStrategy>(retryStrategy);
+            this.retryPolicy.Retrying +=
+                (s, e) =>
+                {
+                    Trace.TraceError("An error occurred in attempt number {1} to send a message: {0}", e.LastException.Message, e.CurrentRetryCount);
+                };
+
+            var factory = MessagingFactory.Create(this.serviceUri, this.tokenProvider);
+            this.topicClient = factory.CreateTopicClient(this.topic);
         }
 
         /// <summary>
         /// Asynchronously sends the specified message.
         /// </summary>
-        public void Send(BrokeredMessage message)
+        public void SendAsync(Func<BrokeredMessage> messageFactory)
         {
-            var factory = MessagingFactory.Create(this.serviceUri, this.tokenProvider);
-            var client = factory.CreateTopicClient(this.topic);
-
-            // TODO: what about retries? Watch-out for message reuse. Need to recreate it before retry.
+            // TODO: SendAsync is not currently being used by the app or infrastructure.
+            // Consider removing or have a callback notifying the result.
             // Always send async.
-            client.BeginSend(message, ar =>
-            {
-                client.EndSend(ar);
-                message.Dispose();
-            }, null);
+            this.retryPolicy.ExecuteAction(
+                ac =>
+                {
+                    this.DoBeginSendMessage(messageFactory(), ac);
+                },
+                ar =>
+                {
+                    this.DoEndSendMessage(ar);
+                },
+                () => { },
+                ex =>
+                {
+                    Trace.TraceError("An unrecoverable error occurred while trying to send a message:\r\n{0}", ex);
+                });
         }
 
-        public void Send(IEnumerable<BrokeredMessage> messages)
+        public void SendAsync(IEnumerable<Func<BrokeredMessage>> messageFactories)
         {
             // TODO: batch/transactional sending?
-            foreach (var message in messages)
+            foreach (var messageFactory in messageFactories)
             {
-                this.Send(message);
+                this.SendAsync(messageFactory);
             }
         }
 
+        public void Send(Func<BrokeredMessage> messageFactory)
+        {
+            var resetEvent = new ManualResetEvent(false);
+            Exception exception = null;
+            this.retryPolicy.ExecuteAction(
+                ac =>
+                {
+                    this.DoBeginSendMessage(messageFactory(), ac);
+                },
+                ar =>
+                {
+                    this.DoEndSendMessage(ar);
+                },
+                () => resetEvent.Set(),
+                ex =>
+                {
+                    Trace.TraceError("An unrecoverable error occurred while trying to send a message:\r\n{0}", ex);
+                    exception = ex;
+                    resetEvent.Set();
+                });
+
+            resetEvent.WaitOne();
+            if (exception != null)
+            {
+                throw exception;
+            }
+        }
+
+        protected virtual void DoBeginSendMessage(BrokeredMessage message, AsyncCallback ac)
+        {
+            try
+            {
+                this.topicClient.BeginSend(message, ac, message);
+            }
+            catch
+            {
+                message.Dispose();
+                throw;
+            }
+        }
+
+        protected virtual void DoEndSendMessage(IAsyncResult ar)
+        {
+            try
+            {
+                this.topicClient.EndSend(ar);
+            }
+            finally
+            {
+                using (ar.AsyncState as IDisposable) { }
+            }
+        }
     }
 }

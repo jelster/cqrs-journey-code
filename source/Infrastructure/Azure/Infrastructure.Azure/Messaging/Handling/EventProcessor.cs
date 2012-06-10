@@ -13,11 +13,8 @@
 
 namespace Infrastructure.Azure.Messaging.Handling
 {
-    using System.Collections.Generic;
-    using System.Diagnostics;
-    using System.IO;
-    using System.Linq;
     using Infrastructure.Azure.Messaging;
+    using Infrastructure.Messaging;
     using Infrastructure.Messaging.Handling;
     using Infrastructure.Serialization;
 
@@ -25,48 +22,29 @@ namespace Infrastructure.Azure.Messaging.Handling
     /// Processes incoming events from the bus and routes them to the appropriate 
     /// handlers.
     /// </summary>
+    // TODO: now that we have just one handler per subscription, it doesn't make 
+    // much sense to have this processor doing multi dispatch.
     public class EventProcessor : MessageProcessor, IEventHandlerRegistry
     {
-        // A simpler list just works. We don't care about two handlers for the same event 
-        // type, etc.
-        private List<IEventHandler> handlers = new List<IEventHandler>();
+        private readonly EventDispatcher eventDispatcher;
 
-        public EventProcessor(IMessageReceiver receiver, ISerializer serializer)
+        public EventProcessor(IMessageReceiver receiver, ITextSerializer serializer)
             : base(receiver, serializer)
         {
+            this.eventDispatcher = new EventDispatcher();
         }
 
         public void Register(IEventHandler eventHandler)
         {
-            this.handlers.Add(eventHandler);
+            this.eventDispatcher.Register(eventHandler);
         }
 
-        protected override void ProcessMessage(object payload)
+        protected override void ProcessMessage(string traceIdentifier, object payload, string messageId, string correlationId)
         {
-            var handlerType = typeof(IEventHandler<>).MakeGenericType(payload.GetType());
-
-            Trace.WriteLine(new string('-', 100));
-            TracePayload(payload);
-
-            foreach (dynamic handler in this.handlers
-                .Where(x => handlerType.IsAssignableFrom(x.GetType())))
+            var @event = payload as IEvent;
+            if (@event != null)
             {
-                Trace.WriteLine("-- Handled by " + ((object)handler).GetType().FullName);
-                handler.Handle((dynamic)payload);
-            }
-
-            Trace.WriteLine(new string('-', 100));
-        }
-
-        [Conditional("TRACE")]
-        private void TracePayload(object payload)
-        {
-            var stream = new MemoryStream();
-            this.Serializer.Serialize(stream, payload);
-            stream.Position = 0;
-            using (var reader = new StreamReader(stream))
-            {
-                Trace.WriteLine(reader.ReadToEnd());
+                this.eventDispatcher.DispatchMessage(@event, messageId, correlationId, traceIdentifier);
             }
         }
     }

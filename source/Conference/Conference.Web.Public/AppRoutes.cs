@@ -46,9 +46,14 @@ namespace Conference.Web.Public
                 new { controller = "Registration", action = "SpecifyRegistrantAndPaymentDetails" });
 
             routes.MapRoute(
-                "RegisterTransactionCompleted",
-                "{conferenceCode}/completed",
-                new { controller = "Registration", action = "TransactionCompleted" });
+                "StartPayment",
+                "{conferenceCode}/pay",
+                new { controller = "Registration", action = "StartPayment" });
+
+            routes.MapRoute(
+                "ExpiredOrder",
+                "{conferenceCode}/expired",
+                new { controller = "Registration", action = "ShowExpiredOrder" });
 
             routes.MapRoute(
                 "RegisterConfirmation",
@@ -60,6 +65,16 @@ namespace Conference.Web.Public
                 "{conferenceCode}/order/find",
                 new { controller = "Order", action = "Find" });
 
+            routes.MapRoute(
+                "AssignSeats",
+                "{conferenceCode}/order/{orderId}/seats",
+                new { controller = "Order", action = "AssignSeats" });
+            
+            routes.MapRoute(
+                "AssignSeatsWithoutAssignmentsId",
+                "{conferenceCode}/order/{orderId}/seats-redirect",
+                new { controller = "Order", action = "AssignSeatsForOrder" });
+            
             routes.MapRoute(
                 "OrderDisplay",
                 "{conferenceCode}/order/{orderId}",

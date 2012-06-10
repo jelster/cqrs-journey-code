@@ -15,7 +15,6 @@ namespace Infrastructure.Azure.IntegrationTests.EventBusIntegration
 {
     using System;
     using System.Threading;
-    using Infrastructure.Azure;
     using Infrastructure.Azure.Messaging;
     using Infrastructure.Azure.Messaging.Handling;
     using Infrastructure.Messaging;
@@ -25,11 +24,13 @@ namespace Infrastructure.Azure.IntegrationTests.EventBusIntegration
 
     public class given_an_azure_event_bus : given_a_topic_and_subscription
     {
+        private const int TimeoutPeriod = 20000;
+
         [Fact]
         public void when_receiving_event_then_calls_handler()
         {
-            var processor = new EventProcessor(new SubscriptionReceiver(this.Settings, this.Topic, this.Subscription), new BinarySerializer());
-            var bus = new EventBus(new TopicSender(this.Settings, this.Topic), new MetadataProvider(), new BinarySerializer());
+            var processor = new EventProcessor(new SubscriptionReceiver(this.Settings, this.Topic, this.Subscription), new JsonTextSerializer());
+            var bus = new EventBus(new TopicSender(this.Settings, this.Topic), new StandardMetadataProvider(), new JsonTextSerializer());
 
             var e = new ManualResetEventSlim();
             var handler = new FooEventHandler(e);
@@ -42,9 +43,65 @@ namespace Infrastructure.Azure.IntegrationTests.EventBusIntegration
             {
                 bus.Publish(new FooEvent());
 
-                e.Wait();
+                e.Wait(TimeoutPeriod);
 
                 Assert.True(handler.Called);
+            }
+            finally
+            {
+                processor.Stop();
+            }
+        }
+
+        [Fact]
+        public void when_receiving_event_then_calls_handler_with_envelope()
+        {
+            var processor = new EventProcessor(new SubscriptionReceiver(this.Settings, this.Topic, this.Subscription), new JsonTextSerializer());
+            var bus = new EventBus(new TopicSender(this.Settings, this.Topic), new StandardMetadataProvider(), new JsonTextSerializer());
+
+            var e = new ManualResetEventSlim();
+            var handler = new FooEnvelopedEventHandler(e);
+
+            processor.Register(handler);
+
+            processor.Start();
+
+            try
+            {
+                bus.Publish(new FooEvent());
+
+                e.Wait(TimeoutPeriod);
+
+                Assert.True(handler.Called);
+            }
+            finally
+            {
+                processor.Stop();
+            }
+        }
+
+        [Fact]
+        public void when_receiving_event_published_with_message_and_correlation_ids_then_calls_handler_with_envelope()
+        {
+            var processor = new EventProcessor(new SubscriptionReceiver(this.Settings, this.Topic, this.Subscription), new JsonTextSerializer());
+            var bus = new EventBus(new TopicSender(this.Settings, this.Topic), new StandardMetadataProvider(), new JsonTextSerializer());
+
+            var e = new ManualResetEventSlim();
+            var handler = new FooEnvelopedEventHandler(e);
+
+            processor.Register(handler);
+
+            processor.Start();
+
+            try
+            {
+                bus.Publish(new Envelope<IEvent>(new FooEvent()) { CorrelationId = "correlation", MessageId = "message" });
+
+                e.Wait(TimeoutPeriod);
+
+                Assert.True(handler.Called);
+                Assert.Equal("correlation", handler.CorrelationId);
+                Assert.Equal("message", handler.MessageId);
             }
             finally
             {
@@ -56,8 +113,8 @@ namespace Infrastructure.Azure.IntegrationTests.EventBusIntegration
         public void when_receiving_not_registered_event_then_ignores()
         {
             var receiver = new SubscriptionReceiver(this.Settings, this.Topic, this.Subscription);
-            var processor = new EventProcessor(receiver, new BinarySerializer());
-            var bus = new EventBus(new TopicSender(this.Settings, this.Topic), new MetadataProvider(), new BinarySerializer());
+            var processor = new EventProcessor(receiver, new JsonTextSerializer());
+            var bus = new EventBus(new TopicSender(this.Settings, this.Topic), new StandardMetadataProvider(), new JsonTextSerializer());
 
             var e = new ManualResetEventSlim();
             var handler = new FooEventHandler(e);
@@ -72,7 +129,7 @@ namespace Infrastructure.Azure.IntegrationTests.EventBusIntegration
             {
                 bus.Publish(new BarEvent());
 
-                e.Wait();
+                e.Wait(TimeoutPeriod);
                 // Give the other event handler some time.
                 Thread.Sleep(100);
 
@@ -87,8 +144,8 @@ namespace Infrastructure.Azure.IntegrationTests.EventBusIntegration
         [Fact]
         public void when_sending_multiple_events_then_calls_all_handlers()
         {
-            var processor = new EventProcessor(new SubscriptionReceiver(this.Settings, this.Topic, this.Subscription), new BinarySerializer());
-            var bus = new EventBus(new TopicSender(this.Settings, this.Topic), new MetadataProvider(), new BinarySerializer());
+            var processor = new EventProcessor(new SubscriptionReceiver(this.Settings, this.Topic, this.Subscription), new JsonTextSerializer());
+            var bus = new EventBus(new TopicSender(this.Settings, this.Topic), new StandardMetadataProvider(), new JsonTextSerializer());
 
             var fooEvent = new ManualResetEventSlim();
             var fooHandler = new FooEventHandler(fooEvent);
@@ -105,8 +162,8 @@ namespace Infrastructure.Azure.IntegrationTests.EventBusIntegration
             {
                 bus.Publish(new IEvent[] { new FooEvent(), new BarEvent() });
 
-                fooEvent.Wait();
-                barEvent.Wait();
+                fooEvent.Wait(TimeoutPeriod);
+                barEvent.Wait(TimeoutPeriod);
 
                 Assert.True(fooHandler.Called);
                 Assert.True(barHandler.Called);
@@ -153,6 +210,30 @@ namespace Infrastructure.Azure.IntegrationTests.EventBusIntegration
             }
 
             public bool Called { get; set; }
+        }
+
+        public class FooEnvelopedEventHandler : IEnvelopedEventHandler<FooEvent>
+        {
+            private ManualResetEventSlim e;
+
+            public FooEnvelopedEventHandler(ManualResetEventSlim e)
+            {
+                this.e = e;
+            }
+
+            public void Handle(Envelope<FooEvent> command)
+            {
+                this.Called = true;
+                this.MessageId = command.MessageId;
+                this.CorrelationId = command.CorrelationId;
+                e.Set();
+            }
+
+            public bool Called { get; set; }
+
+            public string MessageId { get; set; }
+
+            public string CorrelationId { get; set; }
         }
 
         public class BarEventHandler : IEventHandler<BarEvent>

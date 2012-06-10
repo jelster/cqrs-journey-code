@@ -16,9 +16,15 @@ namespace Conference.Web.Admin.Controllers
     using System;
     using System.Data;
     using System.Web.Mvc;
+    using AutoMapper;
 
     public class ConferenceController : Controller
     {
+        static ConferenceController()
+        {
+            Mapper.CreateMap<EditableConferenceInfo, ConferenceInfo>();
+        }
+
         private ConferenceService service;
 
         private ConferenceService Service
@@ -42,10 +48,21 @@ namespace Conference.Web.Admin.Controllers
             {
                 this.ViewBag.Slug = slug;
                 this.Conference = this.Service.FindConference(slug);
+
                 if (this.Conference != null)
                 {
-                    this.ViewBag.OwnerName = this.Conference.OwnerName;
-                    this.ViewBag.WasEverPublished = this.Conference.WasEverPublished;
+                    // check access
+                    var accessCode = (string)this.ControllerContext.RequestContext.RouteData.Values["accessCode"];
+
+                    if (accessCode == null || !string.Equals(accessCode, this.Conference.AccessCode, StringComparison.Ordinal))
+                    {
+                        filterContext.Result = new HttpUnauthorizedResult("Invalid access code.");
+                    }
+                    else
+                    {
+                        this.ViewBag.OwnerName = this.Conference.OwnerName;
+                        this.ViewBag.WasEverPublished = this.Conference.WasEverPublished;
+                    }
                 }
             }
 
@@ -65,15 +82,15 @@ namespace Conference.Web.Admin.Controllers
             var conference = this.Service.FindConference(email, accessCode);
             if (conference == null)
             {
-                ViewBag.NotFound = true;
+                ModelState.AddModelError(string.Empty, "Could not locate a conference with the provided email and access code.");
                 // Preserve input so the user doesn't have to type email again.
                 ViewBag.Email = email;
 
-                return Locate();
+                return View();
             }
 
             // TODO: not very secure ;).
-            return RedirectToAction("Index", new { slug = conference.Slug });
+            return RedirectToAction("Index", new { slug = conference.Slug, accessCode });
         }
 
         public ActionResult Index()
@@ -91,7 +108,7 @@ namespace Conference.Web.Admin.Controllers
         }
 
         [HttpPost]
-        public ActionResult Create(ConferenceInfo conference)
+        public ActionResult Create([Bind(Exclude = "Id,AccessCode,Seats,WasEverPublished")] ConferenceInfo conference)
         {
             if (ModelState.IsValid)
             {
@@ -106,7 +123,7 @@ namespace Conference.Web.Admin.Controllers
                     return View(conference);
                 }
 
-                return RedirectToAction("Index", new { slug = conference.Slug });
+                return RedirectToAction("Index", new { slug = conference.Slug, accessCode = conference.AccessCode });
             }
 
             return View(conference);
@@ -122,19 +139,21 @@ namespace Conference.Web.Admin.Controllers
         }
 
         [HttpPost]
-        public ActionResult Edit(ConferenceInfo conference)
+        public ActionResult Edit(EditableConferenceInfo conference)
         {
             if (this.Conference == null)
             {
                 return HttpNotFound();
             }
+
             if (ModelState.IsValid)
             {
-                this.Service.UpdateConference(conference);
-                return RedirectToAction("Index", new { slug = conference.Slug });
+                var edited = Mapper.Map(conference, this.Conference);
+                this.Service.UpdateConference(edited);
+                return RedirectToAction("Index", new { slug = edited.Slug, accessCode = edited.AccessCode });
             }
 
-            return View(conference);
+            return View(this.Conference);
         }
 
         [HttpPost]
@@ -147,7 +166,7 @@ namespace Conference.Web.Admin.Controllers
 
             this.Service.Publish(this.Conference.Id);
 
-            return RedirectToAction("Index", new { slug = this.Conference.Slug });
+            return RedirectToAction("Index", new { slug = this.Conference.Slug, accessCode = this.Conference.AccessCode });
         }
 
         [HttpPost]
@@ -160,7 +179,7 @@ namespace Conference.Web.Admin.Controllers
 
             this.Service.Unpublish(this.Conference.Id);
 
-            return RedirectToAction("Index", new { slug = this.Conference.Slug });
+            return RedirectToAction("Index", new { slug = this.Conference.Slug, accessCode = this.Conference.AccessCode });
         }
 
         #endregion
@@ -179,12 +198,12 @@ namespace Conference.Web.Admin.Controllers
                 return HttpNotFound();
             }
 
-            return PartialView(this.Service.FindSeats(this.Conference.Id));
+            return PartialView(this.Service.FindSeatTypes(this.Conference.Id));
         }
 
         public ActionResult SeatRow(Guid id)
         {
-            return PartialView("SeatGrid", new SeatInfo[] { this.Service.FindSeat(id) });
+            return PartialView("SeatGrid", new SeatType[] { this.Service.FindSeatType(id) });
         }
 
         public ActionResult CreateSeat()
@@ -193,7 +212,7 @@ namespace Conference.Web.Admin.Controllers
         }
 
         [HttpPost]
-        public ActionResult CreateSeat(SeatInfo seat)
+        public ActionResult CreateSeat(SeatType seat)
         {
             if (this.Conference == null)
             {
@@ -205,7 +224,7 @@ namespace Conference.Web.Admin.Controllers
                 seat.Id = Guid.NewGuid();
                 this.Service.CreateSeat(this.Conference.Id, seat);
 
-                return PartialView("SeatGrid", new SeatInfo[] { seat });
+                return PartialView("SeatGrid", new SeatType[] { seat });
             }
 
             return PartialView("EditSeat", seat);
@@ -218,11 +237,11 @@ namespace Conference.Web.Admin.Controllers
                 return HttpNotFound();
             }
 
-            return PartialView(this.Service.FindSeat(id));
+            return PartialView(this.Service.FindSeatType(id));
         }
 
         [HttpPost]
-        public ActionResult EditSeat(SeatInfo seat)
+        public ActionResult EditSeat(SeatType seat)
         {
             if (this.Conference == null)
             {
@@ -240,16 +259,28 @@ namespace Conference.Web.Admin.Controllers
                     return HttpNotFound();
                 }
 
-                return PartialView("SeatGrid", new SeatInfo[] { seat });
+                return PartialView("SeatGrid", new SeatType[] { seat });
             }
 
             return PartialView(seat);
         }
 
-        [HttpPost]
-        public void DeleteSeat(Guid id)
+        // TODO: Cannot delete until the event is being published
+        //[HttpPost]
+        //public void DeleteSeat(Guid id)
+        //{
+        //    this.Service.DeleteSeat(id);
+        //}
+
+        #endregion
+
+        #region Orders
+
+        public ViewResult Orders()
         {
-            this.Service.DeleteSeat(id);
+            var orders = this.Service.FindOrders(this.Conference.Id);
+
+            return View(orders);
         }
 
         #endregion

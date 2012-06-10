@@ -17,16 +17,21 @@ namespace Payments.Database
 
     public class PaymentsDbContext : DbContext
     {
-        public PaymentsDbContext()
-            : this("Payments")
-        {
-        }
+        public const string SchemaName = "ConferencePayments";
 
         public PaymentsDbContext(string nameOrConnectionString)
             : base(nameOrConnectionString)
         {
         }
 
-        public virtual DbSet<ThirdPartyProcessorPayment> ThirdPartyProcessorPayments { get; private set; }
+        protected override void OnModelCreating(DbModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<ThirdPartyProcessorPayment>().ToTable("ThirdPartyProcessorPayments", SchemaName);
+            modelBuilder.Entity<ThidPartyProcessorPaymentItem>().ToTable("ThidPartyProcessorPaymentItems", SchemaName);
+        }
+
+        public DbSet<ThirdPartyProcessorPayment> ThirdPartyProcessorPayments { get; set; }
     }
 }

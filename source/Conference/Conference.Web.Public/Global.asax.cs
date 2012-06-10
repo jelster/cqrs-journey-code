@@ -13,52 +13,60 @@
 
 namespace Conference.Web.Public
 {
-    using System;
     using System.Data.Entity;
+    using System.Linq;
     using System.Web;
     using System.Web.Mvc;
     using System.Web.Routing;
-    using Infrastructure.Azure;
-    using Infrastructure.Azure.Messaging;
-    using Infrastructure.Azure.Messaging.Handling;
-    using Infrastructure.EventSourcing;
-    using Infrastructure.Messaging;
-    using Infrastructure.Messaging.Handling;
-    using Infrastructure.Messaging.InMemory;
-    using Infrastructure.Processes;
-    using Infrastructure.Database;
-    using Infrastructure.Serialization;
-    using Infrastructure.Sql.Database;
-    using Infrastructure.Sql.EventSourcing;
-    using Infrastructure.Sql.Processes;
+    using Conference.Common;
+    using Conference.Common.Entity;
+    using Conference.Web.Utils;
+    using Infrastructure.BlobStorage;
+    using Infrastructure.Sql.BlobStorage;
     using Microsoft.Practices.Unity;
-    using Newtonsoft.Json;
-    using Payments;
-    using Payments.Database;
-    using Payments.Handlers;
+    using Microsoft.WindowsAzure.ServiceRuntime;
     using Payments.ReadModel;
     using Payments.ReadModel.Implementation;
-    using Registration;
-    using Registration.Database;
-    using Registration.Handlers;
     using Registration.ReadModel;
     using Registration.ReadModel.Implementation;
 
-    public class MvcApplication : System.Web.HttpApplication
+    public partial class MvcApplication : HttpApplication
     {
         private IUnityContainer container;
 
         public static void RegisterGlobalFilters(GlobalFilterCollection filters)
         {
+            filters.Add(new MaintenanceModeAttribute());
             filters.Add(new HandleErrorAttribute());
         }
 
         protected void Application_Start()
         {
+            RoleEnvironment.Changed +=
+                (s, a) =>
+                    {
+                        var changes = a.Changes.OfType<RoleEnvironmentConfigurationSettingChange>().ToList();
+                        if (changes.Any(x => x.ConfigurationSettingName != MaintenanceMode.MaintenanceModeSettingName))
+                        {
+                            RoleEnvironment.RequestRecycle();
+                        }
+                        else
+                        {
+                            if (changes.Any(x => x.ConfigurationSettingName == MaintenanceMode.MaintenanceModeSettingName))
+                            {
+                                MaintenanceMode.RefreshIsInMaintainanceMode();
+                            }
+                        }
+                    };
+            MaintenanceMode.RefreshIsInMaintainanceMode();
+
+            Database.DefaultConnectionFactory = new ServiceConfigurationSettingConnectionFactory(Database.DefaultConnectionFactory);
+
+            // We need to also setup the migration in the website, as the read models are queried 
+            // from here and also need upgrade (PricedOrder in particular for V3).
+            MigrationToV3.Migration.Initialize();
+
             this.container = CreateContainer();
-#if LOCAL
-            RegisterHandlers(this.container);
-#endif
 
             DependencyResolver.SetResolver(new UnityServiceLocator(this.container));
 
@@ -67,133 +75,47 @@ namespace Conference.Web.Public
             AreaRegistration.RegisterAllAreas();
             AppRoutes.RegisterRoutes(RouteTable.Routes);
 
-#if LOCAL
-            Database.SetInitializer(new ConferenceRegistrationDbContextInitializer(new DropCreateDatabaseIfModelChanges<ConferenceRegistrationDbContext>()));
-            Database.SetInitializer(new RegistrationProcessDbContextInitializer(new DropCreateDatabaseIfModelChanges<RegistrationProcessDbContext>()));
-            Database.SetInitializer(new DropCreateDatabaseIfModelChanges<EventStoreDbContext>());
-
-            Database.SetInitializer(new PaymentsReadDbContextInitializer(new DropCreateDatabaseIfModelChanges<PaymentsDbContext>()));
-            // Views repository is currently the same as the domain DB. No initializer needed.
-            Database.SetInitializer<PaymentsReadDbContext>(null);
-
-
-            using (var context = this.container.Resolve<ConferenceRegistrationDbContext>())
+            if (Microsoft.WindowsAzure.ServiceRuntime.RoleEnvironment.IsAvailable)
             {
-                context.Database.Initialize(true);
+                System.Diagnostics.Trace.Listeners.Add(new Microsoft.WindowsAzure.Diagnostics.DiagnosticMonitorTraceListener());
+                System.Diagnostics.Trace.AutoFlush = true;
             }
 
-            using (var context = this.container.Resolve<DbContext>("registration"))
-            {
-                context.Database.Initialize(true);
-            }
-
-            using (var context = this.container.Resolve<EventStoreDbContext>())
-            {
-                context.Database.Initialize(true);
-            }
-
-            using (var context = this.container.Resolve<PaymentsDbContext>("payments"))
-            {
-                context.Database.Initialize(true);
-            }
-
-            container.Resolve<FakeSeatsAvailabilityInitializer>().Initialize();
-#else
-            Database.SetInitializer<PaymentsReadDbContext>(null);
-            Database.SetInitializer<ConferenceRegistrationDbContext>(null);
-#endif
+            this.OnStart();
         }
 
         protected void Application_Stop()
         {
+            this.OnStop();
+
             this.container.Dispose();
         }
 
         private static UnityContainer CreateContainer()
         {
             var container = new UnityContainer();
-            // infrastructure
-            var serializer = new JsonSerializerAdapter(JsonSerializer.Create(new JsonSerializerSettings
-            {
-                // Allows deserializing to the actual runtime type
-                TypeNameHandling = TypeNameHandling.Objects,
-                // In a version resilient way
-                TypeNameAssemblyFormat = System.Runtime.Serialization.Formatters.FormatterAssemblyStyle.Simple
-            }));
-            container.RegisterInstance<ISerializer>(serializer);
 
-#if LOCAL
-            container.RegisterType<ICommandBus, MemoryCommandBus>(new ContainerControlledLifetimeManager());
-            container.RegisterType<ICommandHandlerRegistry, MemoryCommandBus>(new ContainerControlledLifetimeManager(), new InjectionFactory(c => new MemoryCommandBus()));
-            container.RegisterType<IEventBus, MemoryEventBus>(new ContainerControlledLifetimeManager());
-            container.RegisterType<IEventHandlerRegistry, MemoryEventBus>(new ContainerControlledLifetimeManager(), new InjectionFactory(c => new MemoryEventBus()));
-#else
-            var settings = MessagingSettings.Read(HttpContext.Current.Server.MapPath("bin\\Settings.xml"));
-            var commandBus = new CommandBus(new TopicSender(settings, "conference/commands"), new MetadataProvider(), serializer);
+            // repositories used by the application
 
-            container.RegisterInstance<ICommandBus>(commandBus);
-#endif
-
-
-            // repository
-
-#if LOCAL
-            container.RegisterType<EventStoreDbContext>(new TransientLifetimeManager(), new InjectionConstructor("EventStore"));
-            container.RegisterType(typeof(IEventSourcedRepository<>), typeof(SqlEventSourcedRepository<>), new ContainerControlledLifetimeManager());
-            container.RegisterType<DbContext, RegistrationProcessDbContext>("registration", new TransientLifetimeManager(), new InjectionConstructor("ConferenceRegistrationProcesses"));
-            container.RegisterType<IProcessDataContext<RegistrationProcess>, SqlProcessDataContext<RegistrationProcess>>(
-                new TransientLifetimeManager(),
-                new InjectionConstructor(new ResolvedParameter<Func<DbContext>>("registration"), typeof(ICommandBus)));
-
-            container.RegisterType<DbContext, PaymentsDbContext>("payments", new TransientLifetimeManager(), new InjectionConstructor());
-            container.RegisterType<IDataContext<ThirdPartyProcessorPayment>, SqlDataContext<ThirdPartyProcessorPayment>>(
-                new TransientLifetimeManager(),
-                new InjectionConstructor(new ResolvedParameter<Func<DbContext>>("payments"), typeof(IEventBus)));
-#endif
+            container.RegisterType<IBlobStorage, SqlBlobStorage>(new ContainerControlledLifetimeManager(), new InjectionConstructor("BlobStorage"));
             container.RegisterType<ConferenceRegistrationDbContext>(new TransientLifetimeManager(), new InjectionConstructor("ConferenceRegistration"));
-            container.RegisterType<PaymentsReadDbContext>(new TransientLifetimeManager(), new InjectionConstructor());
+            container.RegisterType<PaymentsReadDbContext>(new TransientLifetimeManager(), new InjectionConstructor("Payments"));
 
             container.RegisterType<IOrderDao, OrderDao>();
             container.RegisterType<IConferenceDao, ConferenceDao>();
             container.RegisterType<IPaymentDao, PaymentDao>();
 
+            // configuration specific settings
 
-
-#if LOCAL
-            // handlers
-
-            container.RegisterType<IEventHandler, RegistrationProcessRouter>("RegistrationProcessRouter", new ContainerControlledLifetimeManager());
-            container.RegisterType<ICommandHandler, RegistrationProcessRouter>("RegistrationProcessRouter", new ContainerControlledLifetimeManager());
-
-            container.RegisterType<ICommandHandler, OrderCommandHandler>("OrderCommandHandler");
-            container.RegisterType<ICommandHandler, SeatsAvailabilityHandler>("SeatsAvailabilityHandler");
-            container.RegisterType<IEventHandler, SeatsAvailabilityHandler>("SeatsAvailabilityHandler");
-
-            container.RegisterType<ICommandHandler, ThirdPartyProcessorPaymentCommandHandler>("ThirdPartyProcessorPaymentCommandHandler");
-
-            container.RegisterType<IEventHandler, OrderViewModelGenerator>("OrderViewModelGenerator");
-            container.RegisterType<IEventHandler, ConferenceViewModelGenerator>("ConferenceViewModelGenerator");
-#endif
+            OnCreateContainer(container);
 
             return container;
         }
 
-#if LOCAL
-        private static void RegisterHandlers(IUnityContainer unityContainer)
-        {
-            var commandHandlerRegistry = unityContainer.Resolve<ICommandHandlerRegistry>();
-            var eventHandlerRegistry = unityContainer.Resolve<IEventHandlerRegistry>();
+        static partial void OnCreateContainer(UnityContainer container);
 
-            foreach (var commandHandler in unityContainer.ResolveAll<ICommandHandler>())
-            {
-                commandHandlerRegistry.Register(commandHandler);
-            }
+        partial void OnStart();
 
-            foreach (var eventHandler in unityContainer.ResolveAll<IEventHandler>())
-            {
-                eventHandlerRegistry.Register(eventHandler);
-            }
-        }
-#endif
+        partial void OnStop();
     }
 }

@@ -8,7 +8,7 @@
     <ProjectGuid>{60AF76A9-0891-400F-8F87-A5978D3F3744}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Azure.Tests</RootNamespace>
+    <RootNamespace>Infrastructure.Azure.Tests</RootNamespace>
     <AssemblyName>Azure.Tests</AssemblyName>
     <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
@@ -31,8 +31,11 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Microsoft.ServiceBus, Version=1.6.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
-      <HintPath>..\..\..\packages\WindowsAzure.ServiceBus.1.6.0.0\lib\net40-full\Microsoft.ServiceBus.dll</HintPath>
+    <Reference Include="Microsoft.ServiceBus, Version=1.7.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\WindowsAzure.ServiceBus.1.7.0.0\lib\net40-full\Microsoft.ServiceBus.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.WindowsAzure.Configuration, Version=1.7.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\..\packages\Microsoft.WindowsAzure.ConfigurationManager.1.7.0.0\lib\net35-full\Microsoft.WindowsAzure.Configuration.dll</HintPath>
     </Reference>
     <Reference Include="Moq">
       <HintPath>..\..\..\packages\Moq.4.0.10827\lib\NET40\Moq.dll</HintPath>
@@ -43,15 +46,21 @@
     <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.ServiceModel" />
     <Reference Include="System.XML" />
+    <Reference Include="System.Xml.Linq" />
     <Reference Include="xunit">
       <HintPath>..\..\..\packages\xunit.1.9.0.1566\lib\xunit.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CommandProcessorFixture.cs" />
+    <Compile Include="EventSourcing\EventStoreBusPublisherFixture.cs" />
+    <Compile Include="EventSourcing\AzureEventSourcedRepositoryFixture.cs" />
+    <Compile Include="Messaging\SynchronousCommandBusDecoratorFixture.cs" />
+    <Compile Include="Mocks.cs" />
     <Compile Include="MessageProcessorFixture.cs" />
-    <Compile Include="MessagingSettingsFixture.cs" />
-    <Compile Include="MetadataProviderFixture.cs" />
+    <Compile Include="InfrastructureSettingsFixture.cs" />
+    <Compile Include="StandardMetadataProviderFixture.cs" />
+    <Compile Include="Messaging\CommandBusFixture.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -74,6 +83,7 @@
     <Content Include="..\Settings.Template.xml">
       <Link>Settings.Template.xml</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <SubType>Designer</SubType>
     </Content>
     <Content Include="..\Settings.xml">
       <Link>Settings.xml</Link>

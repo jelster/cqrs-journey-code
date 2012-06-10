@@ -11,26 +11,27 @@
 // See the License for the specific language governing permissions and limitations under the License.
 // ==============================================================================================================
 
-namespace Registration.Tests.RegistrationProcessFixture
-{
-    using System;
-    using System.Linq;
-    using Payments.Contracts.Events;
-    using Registration.Commands;
-    using Registration.Events;
-    using Xunit;
+using System;
+using System.Linq;
+using Infrastructure.Messaging;
+using Payments.Contracts.Events;
+using Registration.Commands;
+using Registration.Events;
+using Xunit;
 
-    public class given_uninitialized_process
+namespace Registration.Tests.RegistrationProcessFixture.given_uninitialized_process
+{
+    public class Context
     {
         protected RegistrationProcess sut;
 
-        public given_uninitialized_process()
+        public Context()
         {
             this.sut = new RegistrationProcess();
         }
     }
 
-    public class when_order_is_placed : given_uninitialized_process
+    public class when_order_is_placed : Context
     {
         private OrderPlaced orderPlaced;
 
@@ -40,49 +41,69 @@ namespace Registration.Tests.RegistrationProcessFixture
                                    {
                                        SourceId = Guid.NewGuid(),
                                        ConferenceId = Guid.NewGuid(),
-                                       Seats = new[] {new SeatQuantity(Guid.NewGuid(), 2)},
+                                       Seats = new[] { new SeatQuantity(Guid.NewGuid(), 2) },
                                        ReservationAutoExpiration = DateTime.UtcNow.Add(TimeSpan.FromMinutes(22))
                                    };
             sut.Handle(orderPlaced);
         }
 
         [Fact]
-        public void then_locks_seats()
+        public void then_sends_two_commands()
         {
-            Assert.Equal(1, sut.Commands.Count());
-            Assert.IsAssignableFrom<MakeSeatReservation>(sut.Commands.Select(x => x.Body).Single());
+            Assert.Equal(2, sut.Commands.Count());
         }
 
         [Fact]
         public void then_reservation_is_requested_for_specific_conference()
         {
-            var reservation = (MakeSeatReservation)sut.Commands.Select(x => x.Body).Single();
+            var reservation = sut.Commands.Select(x => x.Body).OfType<MakeSeatReservation>().Single();
 
             Assert.Equal(orderPlaced.ConferenceId, reservation.ConferenceId);
             Assert.Equal(2, reservation.Seats[0].Quantity);
         }
 
         [Fact]
-        public void then_reservation_expiration_time_is_stored_for_later_user()
+        public void then_saves_reservation_command_id_for_later_use()
         {
-            Assert.Equal(RegistrationProcess.ProcessState.AwaitingReservationConfirmation, sut.State);
+            var reservation = sut.Commands.Select(x => x.Body).OfType<MakeSeatReservation>().Single();
+
+            Assert.Equal(reservation.Id, this.sut.SeatReservationCommandId);
+        }
+
+        [Fact]
+        public void then_posts_delayed_expiration_command()
+        {
+            var expirationCommandEnvelope = this.sut.Commands.Where(e => e.Body is ExpireRegistrationProcess).Single();
+
+            Assert.True(expirationCommandEnvelope.Delay > TimeSpan.FromMinutes(32));
+            Assert.Equal(((ExpireRegistrationProcess)expirationCommandEnvelope.Body).ProcessId, this.sut.Id);
+            Assert.Equal(expirationCommandEnvelope.Body.Id, this.sut.ExpirationCommandId);
+        }
+
+        [Fact]
+        public void then_reservation_expiration_time_is_stored_for_later_use()
+        {
+            Assert.True(sut.ReservationAutoExpiration.HasValue);
+            Assert.Equal(orderPlaced.ReservationAutoExpiration, sut.ReservationAutoExpiration.Value);
         }
 
         [Fact]
         public void then_transitions_to_awaiting_reservation_confirmation_state()
         {
-            Assert.True(sut.ReservationAutoExpiration.HasValue);
-            Assert.Equal(orderPlaced.ReservationAutoExpiration, sut.ReservationAutoExpiration.Value);
+            Assert.Equal(RegistrationProcess.ProcessState.AwaitingReservationConfirmation, sut.State);
         }
     }
+}
 
-    public class given_process_awaiting_for_reservation_confirmation
+namespace Registration.Tests.RegistrationProcessFixture.given_process_awaiting_for_reservation_confirmation
+{
+    public class Context
     {
         protected RegistrationProcess sut;
         protected Guid orderId;
         protected Guid conferenceId;
 
-        public given_process_awaiting_for_reservation_confirmation()
+        public Context()
         {
             this.sut = new RegistrationProcess();
             this.orderId = Guid.NewGuid();
@@ -99,7 +120,7 @@ namespace Registration.Tests.RegistrationProcessFixture
         }
     }
 
-    public class when_reservation_confirmation_is_received : given_process_awaiting_for_reservation_confirmation
+    public class when_reservation_confirmation_is_received : Context
     {
         private Guid reservationId;
 
@@ -109,7 +130,7 @@ namespace Registration.Tests.RegistrationProcessFixture
             this.reservationId = makeReservationCommand.ReservationId;
 
             var seatsReserved = new SeatsReserved { SourceId = this.conferenceId, ReservationId = makeReservationCommand.ReservationId, ReservationDetails = new SeatQuantity[0] };
-            sut.Handle(seatsReserved);
+            sut.Handle(new Envelope<SeatsReserved>(seatsReserved) { CorrelationId = makeReservationCommand.Id.ToString() });
         }
 
         [Fact]
@@ -121,30 +142,97 @@ namespace Registration.Tests.RegistrationProcessFixture
         }
 
         [Fact]
-        public void then_enqueues_expiration_message_using_expected_value_from_order_plus_buffer()
+        public void then_transitions_state()
         {
-            var message = sut.Commands.Single(x => x.Body is ExpireRegistrationProcess);
+            Assert.Equal(RegistrationProcess.ProcessState.ReservationConfirmationReceived, sut.State);
+        }
+    }
 
-            Assert.True(message.Delay > TimeSpan.FromMinutes(22));
-            Assert.True(message.Delay < TimeSpan.FromMinutes(30));
-            Assert.Equal(sut.Id, ((ExpireRegistrationProcess)message.Body).ProcessId);
+    public class when_reservation_confirmation_is_received_for_non_current_correlation_id : Context
+    {
+        private int initialCommandCount;
+
+        public when_reservation_confirmation_is_received_for_non_current_correlation_id()
+        {
+            var makeReservationCommand = sut.Commands.Select(e => e.Body).OfType<MakeSeatReservation>().Single();
+
+            var seatsReserved = new SeatsReserved { SourceId = this.conferenceId, ReservationId = makeReservationCommand.ReservationId, ReservationDetails = new SeatQuantity[0] };
+            this.initialCommandCount = this.sut.Commands.Count();
+            sut.Handle(new Envelope<SeatsReserved>(seatsReserved) { CorrelationId = Guid.NewGuid().ToString() });
+        }
+
+        [Fact]
+        public void then_does_not_update_order_status()
+        {
+            Assert.Equal(this.initialCommandCount, this.sut.Commands.Count());
         }
 
         [Fact]
         public void then_transitions_state()
         {
-            Assert.Equal(RegistrationProcess.ProcessState.AwaitingPayment, sut.State);
+            Assert.Equal(RegistrationProcess.ProcessState.AwaitingReservationConfirmation, sut.State);
         }
     }
 
-    public class given_process_awaiting_payment
+    public class when_order_update_is_received : Context
+    {
+        private Guid reservationId;
+        private OrderUpdated orderUpdated;
+
+        public when_order_update_is_received()
+        {
+            var makeReservationCommand = sut.Commands.Select(e => e.Body).OfType<MakeSeatReservation>().Single();
+            this.reservationId = makeReservationCommand.ReservationId;
+
+            this.orderUpdated = new OrderUpdated
+            {
+                SourceId = Guid.NewGuid(),
+                Seats = new[] { new SeatQuantity(Guid.NewGuid(), 3) }
+            };
+            sut.Handle(orderUpdated);
+        }
+
+        [Fact]
+        public void then_sends_new_reservation_command()
+        {
+            Assert.Equal(2, sut.Commands.Select(x => x.Body).OfType<MakeSeatReservation>().Count());
+        }
+
+        [Fact]
+        public void then_reservation_is_requested_for_specific_conference()
+        {
+            var newReservation = sut.Commands.Select(x => x.Body).OfType<MakeSeatReservation>().ElementAt(1);
+
+            Assert.Equal(this.conferenceId, newReservation.ConferenceId);
+            Assert.Equal(3, newReservation.Seats[0].Quantity);
+        }
+
+        [Fact]
+        public void then_saves_reservation_command_id_for_later_use()
+        {
+            var reservation = sut.Commands.Select(x => x.Body).OfType<MakeSeatReservation>().ElementAt(1);
+
+            Assert.Equal(reservation.Id, this.sut.SeatReservationCommandId);
+        }
+
+        [Fact]
+        public void then_transitions_to_awaiting_reservation_confirmation_state()
+        {
+            Assert.Equal(RegistrationProcess.ProcessState.AwaitingReservationConfirmation, sut.State);
+        }
+    }
+}
+
+namespace Registration.Tests.RegistrationProcessFixture.given_process_with_reservation_confirmation_received
+{
+    public class Context
     {
         protected RegistrationProcess sut;
         protected Guid orderId;
         protected Guid conferenceId;
         protected Guid reservationId;
 
-        public given_process_awaiting_payment()
+        public Context()
         {
             this.sut = new RegistrationProcess();
             this.orderId = Guid.NewGuid();
@@ -165,50 +253,20 @@ namespace Registration.Tests.RegistrationProcessFixture
             this.reservationId = makeReservationCommand.ReservationId;
 
             this.sut.Handle(
-                new SeatsReserved
+                new Envelope<SeatsReserved>(
+                    new SeatsReserved
                     {
                         SourceId = this.conferenceId,
                         ReservationId = makeReservationCommand.ReservationId,
-                        ReservationDetails = new[] {new SeatQuantity(seatType, 2)}
+                        ReservationDetails = new[] { new SeatQuantity(seatType, 2) }
+                    })
+                    {
+                        CorrelationId = makeReservationCommand.Id.ToString()
                     });
         }
     }
 
-    public class when_reservation_is_paid : given_process_awaiting_payment
-    {
-        public when_reservation_is_paid()
-        {
-            sut.Handle(new PaymentCompleted
-            {
-                PaymentSourceId = this.orderId,
-            });
-        }
-
-        [Fact]
-        public void then_commits_seat_reservations()
-        {
-            var command = sut.Commands.Select(x => x.Body).OfType<CommitSeatReservation>().Single();
-
-            Assert.Equal(this.reservationId, command.ReservationId);
-            Assert.Equal(this.conferenceId, command.ConferenceId);
-        }
-
-        [Fact]
-        public void then_updates_order_status()
-        {
-            var command = sut.Commands.Select(x => x.Body).OfType<ConfirmOrderPayment>().Single();
-
-            Assert.Equal(this.orderId, command.OrderId);
-        }
-
-        [Fact]
-        public void then_transitions_state()
-        {
-            Assert.Equal(true, sut.Completed);
-        }
-    }
-
-    public class when_reservation_is_expired : given_process_awaiting_payment
+    public class when_reservation_is_expired : Context
     {
         public when_reservation_is_expired()
         {
@@ -237,6 +295,180 @@ namespace Registration.Tests.RegistrationProcessFixture
         public void then_transitions_state()
         {
             Assert.Equal(true, sut.Completed);
+        }
+    }
+
+    public class when_order_update_is_received : Context
+    {
+        private OrderUpdated orderUpdated;
+
+        public when_order_update_is_received()
+        {
+            var makeReservationCommand = sut.Commands.Select(e => e.Body).OfType<MakeSeatReservation>().Single();
+            this.reservationId = makeReservationCommand.ReservationId;
+
+            this.orderUpdated = new OrderUpdated
+            {
+                SourceId = this.orderId,
+                Seats = new[] { new SeatQuantity(Guid.NewGuid(), 3) }
+            };
+            sut.Handle(orderUpdated);
+        }
+
+        [Fact]
+        public void then_sends_new_reservation_command()
+        {
+            Assert.Equal(2, sut.Commands.Select(x => x.Body).OfType<MakeSeatReservation>().Count());
+        }
+
+        [Fact]
+        public void then_reservation_is_requested_for_specific_conference()
+        {
+            var newReservation = sut.Commands.Select(x => x.Body).OfType<MakeSeatReservation>().ElementAt(1);
+
+            Assert.Equal(this.conferenceId, newReservation.ConferenceId);
+            Assert.Equal(3, newReservation.Seats[0].Quantity);
+        }
+
+        [Fact]
+        public void then_saves_reservation_command_id_for_later_use()
+        {
+            var reservation = sut.Commands.Select(x => x.Body).OfType<MakeSeatReservation>().ElementAt(1);
+
+            Assert.Equal(reservation.Id, this.sut.SeatReservationCommandId);
+        }
+
+        [Fact]
+        public void then_transitions_to_awaiting_reservation_confirmation_state()
+        {
+            Assert.Equal(RegistrationProcess.ProcessState.AwaitingReservationConfirmation, sut.State);
+        }
+    }
+
+    public class when_payment_confirmation_is_received : Context
+    {
+        public when_payment_confirmation_is_received()
+        {
+            sut.Handle(new PaymentCompleted
+            {
+                PaymentSourceId = this.orderId,
+            });
+        }
+
+        [Fact]
+        public void then_confirms_order()
+        {
+            var command = sut.Commands.Select(x => x.Body).OfType<ConfirmOrder>().Single();
+
+            Assert.Equal(this.orderId, command.OrderId);
+        }
+
+        [Fact]
+        public void then_transitions_state()
+        {
+            Assert.Equal(RegistrationProcess.ProcessState.PaymentConfirmationReceived, this.sut.State);
+        }
+    }
+
+    public class when_order_is_confirmed : Context
+    {
+        public when_order_is_confirmed()
+        {
+            sut.Handle(new OrderConfirmed
+            {
+                SourceId = this.orderId,
+            });
+        }
+
+        [Fact]
+        public void then_commits_seat_reservations()
+        {
+            var command = sut.Commands.Select(x => x.Body).OfType<CommitSeatReservation>().Single();
+
+            Assert.Equal(this.reservationId, command.ReservationId);
+            Assert.Equal(this.conferenceId, command.ConferenceId);
+        }
+
+        [Fact]
+        public void then_transitions_state()
+        {
+            Assert.True(this.sut.Completed);
+        }
+    }
+}
+
+namespace Registration.Tests.RegistrationProcessFixture.given_process_with_payment_confirmation_received
+{
+    public class Context
+    {
+        protected RegistrationProcess sut;
+        protected Guid orderId;
+        protected Guid conferenceId;
+        protected Guid reservationId;
+
+        public Context()
+        {
+            this.sut = new RegistrationProcess();
+            this.orderId = Guid.NewGuid();
+            this.conferenceId = Guid.NewGuid();
+
+            var seatType = Guid.NewGuid();
+
+            this.sut.Handle(
+                new OrderPlaced
+                {
+                    SourceId = this.orderId,
+                    ConferenceId = this.conferenceId,
+                    Seats = new[] { new SeatQuantity(Guid.NewGuid(), 2) },
+                    ReservationAutoExpiration = DateTime.UtcNow.Add(TimeSpan.FromMinutes(22))
+                });
+
+            var makeReservationCommand = sut.Commands.Select(e => e.Body).OfType<MakeSeatReservation>().Single();
+            this.reservationId = makeReservationCommand.ReservationId;
+
+            this.sut.Handle(
+                new Envelope<SeatsReserved>(
+                    new SeatsReserved
+                    {
+                        SourceId = this.conferenceId,
+                        ReservationId = makeReservationCommand.ReservationId,
+                        ReservationDetails = new[] { new SeatQuantity(seatType, 2) }
+                    })
+                    {
+                        CorrelationId = makeReservationCommand.Id.ToString()
+                    });
+
+            this.sut.Handle(
+                new PaymentCompleted
+                {
+                    PaymentSourceId = this.orderId,
+                });
+        }
+    }
+
+    public class when_order_is_confirmed : Context
+    {
+        public when_order_is_confirmed()
+        {
+            sut.Handle(new OrderConfirmed
+            {
+                SourceId = this.orderId,
+            });
+        }
+
+        [Fact]
+        public void then_commits_seat_reservations()
+        {
+            var command = sut.Commands.Select(x => x.Body).OfType<CommitSeatReservation>().Single();
+
+            Assert.Equal(this.reservationId, command.ReservationId);
+            Assert.Equal(this.conferenceId, command.ConferenceId);
+        }
+
+        [Fact]
+        public void then_transitions_state()
+        {
+            Assert.True(this.sut.Completed);
         }
     }
 }

@@ -66,7 +66,7 @@ a:hover {color: #66ccff;}
 .g-clear {overflow: hidden;clear: both;font-size: 0; height: 0;}
 
 input {
-    text-align: center;
+    text-align: left;
 }
 input[type=tel],
 input[type=text],
@@ -76,7 +76,31 @@ input[type=number] {
 }
 
 
+/* Styles for validation helpers
+-----------------------------------------------------------*/
+.field-validation-error
+{
+    color: #ff0000;
+}
 
+.field-validation-valid
+{
+    display: none;
+}
 
+.input-validation-error
+{
+    border: 1px solid #ff0000;
+    background-color: #ffaaaa;
+}
 
+.validation-summary-errors
+{
+    font-weight: bold;
+    color: #FFFF00;
+}
 
+.validation-summary-valid
+{
+    display: none;
+}

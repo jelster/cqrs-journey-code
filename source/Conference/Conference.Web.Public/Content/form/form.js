@@ -56,7 +56,7 @@ $.fn.jsSelect = function() {
 			$opt.text(option.text);
 			$opt.data('val', option.value);
 			if(option.value == $select.val())
-				$opt.hide();
+				$opt.show();
 			$cont.find('.js-options ul').append($opt);
 		}
 	};
@@ -64,7 +64,7 @@ $.fn.jsSelect = function() {
 	var setValue = function(value) {
 		var label = valueLabels[value];
 		$cont.find('.js-current').text(label);
-		$cont.find('.js-input').val(value);
+		$cont.find('.js-input').val(value).change();
 	};
 	
 	var onClickSelect = function() {
@@ -85,7 +85,6 @@ $.fn.jsSelect = function() {
 	var onClickOption = function() {
 		setValue($(this).data('val'));
 		$('.form-select__options__item').show();
-		$(this).hide();
 	};
 	
 	init(this);

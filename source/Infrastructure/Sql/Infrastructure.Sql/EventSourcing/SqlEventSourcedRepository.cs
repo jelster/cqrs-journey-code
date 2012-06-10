@@ -20,18 +20,22 @@ namespace Infrastructure.Sql.EventSourcing
     using Infrastructure.EventSourcing;
     using Infrastructure.Messaging;
     using Infrastructure.Serialization;
+    using Infrastructure.Sql.Messaging;
+    using Infrastructure.Util;
 
     // TODO: This is an extremely basic implementation of the event store (straw man), that will be replaced in the future.
     // It does not check for event versions before committing, nor is transactional with the event bus.
     // It does not do any snapshots either, which the SeatsAvailability will definitely need.
     public class SqlEventSourcedRepository<T> : IEventSourcedRepository<T> where T : class, IEventSourced
     {
+        // Could potentially use DataAnnotations to get a friendly/unique name in case of collisions between BCs.
+        private static readonly string sourceType = typeof(T).Name;
         private readonly IEventBus eventBus;
-        private readonly ISerializer serializer;
+        private readonly ITextSerializer serializer;
         private readonly Func<EventStoreDbContext> contextFactory;
         private readonly Func<Guid, IEnumerable<IVersionedEvent>, T> entityFactory;
 
-        public SqlEventSourcedRepository(IEventBus eventBus, ISerializer serializer, Func<EventStoreDbContext> contextFactory)
+        public SqlEventSourcedRepository(IEventBus eventBus, ITextSerializer serializer, Func<EventStoreDbContext> contextFactory)
         {
             this.eventBus = eventBus;
             this.serializer = serializer;
@@ -51,11 +55,10 @@ namespace Infrastructure.Sql.EventSourcing
             using (var context = this.contextFactory.Invoke())
             {
                 var deserialized = context.Set<Event>()
-                    .Where(x => x.AggregateId == id)
+                    .Where(x => x.AggregateId == id && x.AggregateType == sourceType)
                     .OrderBy(x => x.Version)
                     .AsEnumerable()
-                    .Select(x => this.serializer.Deserialize(new MemoryStream(x.Payload)))
-                    .Cast<IVersionedEvent>()
+                    .Select(this.Deserialize)
                     .AsCachedAnyEnumerable();
 
                 if (deserialized.Any())
@@ -67,27 +70,60 @@ namespace Infrastructure.Sql.EventSourcing
             }
         }
 
-        public void Save(T eventSourced)
+        public T Get(Guid id)
+        {
+            var entity = this.Find(id);
+            if (entity == null)
+            {
+                throw new EntityNotFoundException(id, sourceType);
+            }
+
+            return entity;
+        }
+
+        public void Save(T eventSourced, string correlationId)
         {
             // TODO: guarantee that only incremental versions of the event are stored
             var events = eventSourced.Events.ToArray();
             using (var context = this.contextFactory.Invoke())
             {
+                var eventsSet = context.Set<Event>();
                 foreach (var e in events)
                 {
-                    using (var stream = new MemoryStream())
-                    {
-                        this.serializer.Serialize(stream, e);
-                        var serialized = new Event { AggregateId = e.SourceId, Version = e.Version, Payload = stream.ToArray() };
-                        context.Set<Event>().Add(serialized);
-                    }
+                    eventsSet.Add(this.Serialize(e, correlationId));
                 }
 
                 context.SaveChanges();
             }
 
             // TODO: guarantee delivery or roll back, or have a way to resume after a system crash
-            this.eventBus.Publish(events);
+            this.eventBus.Publish(events.Select(e => new Envelope<IEvent>(e) { CorrelationId = correlationId }));
+        }
+
+        private Event Serialize(IVersionedEvent e, string correlationId)
+        {
+            Event serialized;
+            using (var writer = new StringWriter())
+            {
+                this.serializer.Serialize(writer, e);
+                serialized = new Event
+                {
+                    AggregateId = e.SourceId,
+                    AggregateType = sourceType,
+                    Version = e.Version,
+                    Payload = writer.ToString(),
+                    CorrelationId = correlationId
+                };
+            }
+            return serialized;
+        }
+
+        private IVersionedEvent Deserialize(Event @event)
+        {
+            using (var reader = new StringReader(@event.Payload))
+            {
+                return (IVersionedEvent)this.serializer.Deserialize(reader);
+            }
         }
     }
 }

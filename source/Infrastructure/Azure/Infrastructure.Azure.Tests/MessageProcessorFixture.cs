@@ -15,6 +15,7 @@ namespace Infrastructure.Azure.Tests
 {
     using System;
     using Infrastructure.Azure.Messaging;
+    using Infrastructure.Azure.Messaging.Handling;
     using Infrastructure.Serialization;
     using Microsoft.ServiceBus.Messaging;
     using Moq;
@@ -27,7 +28,7 @@ namespace Infrastructure.Azure.Tests
         public void when_starting_twice_then_ignores_second_request()
         {
             var receiver = new Mock<IMessageReceiver>();
-            var serializer = new Mock<ISerializer>();
+            var serializer = new Mock<ITextSerializer>();
             var processor = new Mock<MessageProcessor>(receiver.Object, serializer.Object) { CallBase = true }.Object;
 
             processor.Start();
@@ -39,7 +40,7 @@ namespace Infrastructure.Azure.Tests
         public void when_disposing_started_then_stops()
         {
             var receiver = new Mock<IMessageReceiver>();
-            var serializer = new Mock<ISerializer>();
+            var serializer = new Mock<ITextSerializer>();
             var processor = new Mock<MessageProcessor>(receiver.Object, serializer.Object) { CallBase = true }.Object;
 
             processor.Start();
@@ -53,7 +54,7 @@ namespace Infrastructure.Azure.Tests
         {
             var receiver = new Mock<IMessageReceiver>();
             var disposable = receiver.As<IDisposable>();
-            var serializer = new Mock<ISerializer>();
+            var serializer = new Mock<ITextSerializer>();
             var processor = new Mock<MessageProcessor>(receiver.Object, serializer.Object) { CallBase = true }.Object;
 
             processor.Dispose();
@@ -65,7 +66,7 @@ namespace Infrastructure.Azure.Tests
         public void when_stopping_disposed_then_ignores()
         {
             var receiver = new Mock<IMessageReceiver>();
-            var serializer = new Mock<ISerializer>();
+            var serializer = new Mock<ITextSerializer>();
             var processor = new Mock<MessageProcessor>(receiver.Object, serializer.Object) { CallBase = true }.Object;
 
             processor.Dispose();
@@ -77,7 +78,7 @@ namespace Infrastructure.Azure.Tests
         public void when_stopping_non_started_then_ignores()
         {
             var receiver = new Mock<IMessageReceiver>();
-            var serializer = new Mock<ISerializer>();
+            var serializer = new Mock<ITextSerializer>();
             var processor = new Mock<MessageProcessor>(receiver.Object, serializer.Object) { CallBase = true }.Object;
 
             processor.Stop();
@@ -87,21 +88,21 @@ namespace Infrastructure.Azure.Tests
         public void when_message_received_without_type_then_does_not_call_process_message()
         {
             var receiver = new Mock<IMessageReceiver>();
-            var serializer = new Mock<ISerializer>();
+            var serializer = new Mock<ITextSerializer>();
             var processor = new Mock<MessageProcessor>(receiver.Object, serializer.Object) { CallBase = true }.Object;
 
             var message = new BrokeredMessage("foo");
 
             receiver.Raise(x => x.MessageReceived += null, new BrokeredMessageEventArgs(message));
 
-            Mock.Get(processor).Protected().Verify("ProcessMessage", Times.Never(), ItExpr.IsAny<object>());
+            Mock.Get(processor).Protected().Verify("ProcessMessage", Times.Never(), ItExpr.IsAny<string>(), ItExpr.IsAny<object>(), ItExpr.IsAny<string>(), ItExpr.IsAny<string>());
         }
 
         [Fact]
         public void when_message_received_without_assembly_then_does_not_call_process_message()
         {
             var receiver = new Mock<IMessageReceiver>();
-            var serializer = new Mock<ISerializer>();
+            var serializer = new Mock<ITextSerializer>();
             var processor = new Mock<MessageProcessor>(receiver.Object, serializer.Object) { CallBase = true }.Object;
 
             var message = new BrokeredMessage("foo");
@@ -109,7 +110,7 @@ namespace Infrastructure.Azure.Tests
 
             receiver.Raise(x => x.MessageReceived += null, new BrokeredMessageEventArgs(message));
 
-            Mock.Get(processor).Protected().Verify("ProcessMessage", Times.Never(), ItExpr.IsAny<object>());
+            Mock.Get(processor).Protected().Verify("ProcessMessage", Times.Never(), ItExpr.IsAny<string>(), ItExpr.IsAny<object>(), ItExpr.IsAny<string>(), ItExpr.IsAny<string>());
         }
     }
 }

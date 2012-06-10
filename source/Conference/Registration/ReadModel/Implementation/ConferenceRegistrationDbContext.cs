@@ -22,10 +22,7 @@ namespace Registration.ReadModel.Implementation
     /// </summary>
     public class ConferenceRegistrationDbContext : DbContext
     {
-        public ConferenceRegistrationDbContext()
-            : this("ConferenceRegistration")
-        {
-        }
+        public const string SchemaName = "ConferenceRegistration";
 
         public ConferenceRegistrationDbContext(string nameOrConnectionString)
             : base(nameOrConnectionString)
@@ -37,13 +34,17 @@ namespace Registration.ReadModel.Implementation
             base.OnModelCreating(modelBuilder);
 
             // Make the name of the views match exactly the name of the corresponding property.
-            modelBuilder.Entity<OrderDTO>().ToTable("OrdersView");
-            // modelBuilder.Entity<OrderDTO>().HasMany(c => c.Lines).WithRequired().Map(c => c.MapKey("OrdersView_Id"));
-            modelBuilder.Entity<OrderItemDTO>().ToTable("OrderItemsView");
+            modelBuilder.Entity<DraftOrder>().ToTable("OrdersView", SchemaName);
+            modelBuilder.Entity<DraftOrder>().HasMany(c => c.Lines).WithRequired();
+            modelBuilder.Entity<DraftOrderItem>().ToTable("OrderItemsView", SchemaName);
+            modelBuilder.Entity<PricedOrder>().ToTable("PricedOrders", SchemaName);
+            modelBuilder.Entity<PricedOrder>().HasMany(c => c.Lines).WithRequired().HasForeignKey(x => x.OrderId);
+            modelBuilder.Entity<PricedOrderLine>().ToTable("PricedOrderLines", SchemaName);
+            modelBuilder.Entity<PricedOrderLineSeatTypeDescription>().ToTable("PricedOrderLineSeatTypeDescriptions", SchemaName);
 
-            modelBuilder.Entity<ConferenceDTO>().ToTable("ConferencesView");
-            modelBuilder.Entity<ConferenceDTO>().HasMany(c => c.Seats).WithRequired().Map(c => c.MapKey("ConferencesView_Id"));
-            modelBuilder.Entity<ConferenceSeatTypeDTO>().ToTable("ConferenceSeatsView");
+            modelBuilder.Entity<Conference>().ToTable("ConferencesView", SchemaName);
+            modelBuilder.Entity<Conference>().HasMany(c => c.Seats).WithRequired();
+            modelBuilder.Entity<SeatType>().ToTable("ConferenceSeatTypesView", SchemaName);
         }
 
         public T Find<T>(Guid id) where T : class

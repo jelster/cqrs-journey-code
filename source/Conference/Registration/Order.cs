@@ -16,6 +16,7 @@ namespace Registration
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using AutoMapper;
     using Conference.Common.Utils;
     using Infrastructure.EventSourcing;
     using Registration.Events;
@@ -26,40 +27,62 @@ namespace Registration
 
         private List<SeatQuantity> seats;
         private bool isConfirmed;
+        private Guid conferenceId;
 
-        protected Order(Guid id) : base(id)
+        static Order()
+        {
+            // Mapping old version of the OrderPaymentConfirmed event to the new version.
+            // Currently it is being done explicitly by the consumer, but this one in particular could be done
+            // at the deserialization level, as it is just a rename, not a functionality change.
+            Mapper.CreateMap<OrderPaymentConfirmed, OrderConfirmed>();
+        }
+
+        protected Order(Guid id)
+            : base(id)
         {
             base.Handles<OrderPlaced>(this.OnOrderPlaced);
             base.Handles<OrderUpdated>(this.OnOrderUpdated);
             base.Handles<OrderPartiallyReserved>(this.OnOrderPartiallyReserved);
             base.Handles<OrderReservationCompleted>(this.OnOrderReservationCompleted);
             base.Handles<OrderExpired>(this.OnOrderExpired);
-            base.Handles<OrderPaymentConfirmed>(this.OnOrderPaymentConfirmed);
+            base.Handles<OrderPaymentConfirmed>(e => this.OnOrderConfirmed(Mapper.Map<OrderConfirmed>(e)));
+            base.Handles<OrderConfirmed>(this.OnOrderConfirmed);
             base.Handles<OrderRegistrantAssigned>(this.OnOrderRegistrantAssigned);
+            base.Handles<OrderTotalsCalculated>(this.OnOrderTotalsCalculated);
         }
 
-        public Order(Guid id, IEnumerable<IVersionedEvent> history) : this(id)
+        public Order(Guid id, IEnumerable<IVersionedEvent> history)
+            : this(id)
         {
             this.LoadFrom(history);
         }
 
-        public Order(Guid id, Guid conferenceId, IEnumerable<OrderItem> items) : this(id)
+        public Order(Guid id, Guid conferenceId, IEnumerable<OrderItem> items, IPricingService pricingService)
+            : this(id)
         {
-            this.Update(new OrderPlaced 
+            var all = ConvertItems(items);
+            var totals = pricingService.CalculateTotal(conferenceId, all.AsReadOnly());
+
+            this.Update(new OrderPlaced
             {
-                ConferenceId = conferenceId, 
-                Seats = ConvertItems(items),
+                ConferenceId = conferenceId,
+                Seats = all,
                 ReservationAutoExpiration = DateTime.UtcNow.Add(ReservationAutoExpiration),
                 AccessCode = HandleGenerator.Generate(6)
             });
+            this.Update(new OrderTotalsCalculated { Total = totals.Total, Lines = totals.Lines != null ? totals.Lines.ToArray() : null, IsFreeOfCharge = totals.Total == 0m });
         }
 
-        public void UpdateSeats(IEnumerable<OrderItem> seats)
+        public void UpdateSeats(IEnumerable<OrderItem> items, IPricingService pricingService)
         {
-            this.Update(new OrderUpdated { Seats = ConvertItems(seats) });
+            var all = ConvertItems(items);
+            var totals = pricingService.CalculateTotal(this.conferenceId, all.AsReadOnly());
+
+            this.Update(new OrderUpdated { Seats = all });
+            this.Update(new OrderTotalsCalculated { Total = totals.Total, Lines = totals.Lines != null ? totals.Lines.ToArray() : null, IsFreeOfCharge = totals.Total == 0m });
         }
 
-        public void MarkAsReserved(DateTime expirationDate, IEnumerable<SeatQuantity> reservedSeats)
+        public void MarkAsReserved(IPricingService pricingService, DateTime expirationDate, IEnumerable<SeatQuantity> reservedSeats)
         {
             if (this.isConfirmed)
                 throw new InvalidOperationException("Cannot modify a confirmed order.");
@@ -67,9 +90,12 @@ namespace Registration
             var reserved = reservedSeats.ToList();
 
             // Is there an order item which didn't get an exact reservation?
-            if (this.seats.Any(item => !reserved.Any(seat => seat.SeatType == item.SeatType && seat.Quantity == item.Quantity)))
+            if (this.seats.Any(item => item.Quantity != 0 && !reserved.Any(seat => seat.SeatType == item.SeatType && seat.Quantity == item.Quantity)))
             {
+                var totals = pricingService.CalculateTotal(this.conferenceId, reserved.AsReadOnly());
+
                 this.Update(new OrderPartiallyReserved { ReservationExpiration = expirationDate, Seats = reserved.ToArray() });
+                this.Update(new OrderTotalsCalculated { Total = totals.Total, Lines = totals.Lines != null ? totals.Lines.ToArray() : null, IsFreeOfCharge = totals.Total == 0m });
             }
             else
             {
@@ -85,9 +111,9 @@ namespace Registration
             this.Update(new OrderExpired());
         }
 
-        public void ConfirmPayment()
+        public void Confirm()
         {
-            this.Update(new OrderPaymentConfirmed());
+            this.Update(new OrderConfirmed());
         }
 
         public void AssignRegistrant(string firstName, string lastName, string email)
@@ -100,8 +126,17 @@ namespace Registration
             });
         }
 
+        public SeatAssignments CreateSeatAssignments()
+        {
+            if (!this.isConfirmed)
+                throw new InvalidOperationException("Cannot create seat assignments for an order that isn't paid yet.");
+
+            return new SeatAssignments(this.Id, this.seats.AsReadOnly());
+        }
+
         private void OnOrderPlaced(OrderPlaced e)
         {
+            this.conferenceId = e.ConferenceId;
             this.seats = e.Seats.ToList();
         }
 
@@ -109,7 +144,7 @@ namespace Registration
         {
             this.seats = e.Seats.ToList();
         }
-        
+
         private void OnOrderPartiallyReserved(OrderPartiallyReserved e)
         {
             this.seats = e.Seats.ToList();
@@ -124,12 +159,16 @@ namespace Registration
         {
         }
 
-        private void OnOrderPaymentConfirmed(OrderPaymentConfirmed e)
+        private void OnOrderConfirmed(OrderConfirmed e)
         {
             this.isConfirmed = true;
         }
 
         private void OnOrderRegistrantAssigned(OrderRegistrantAssigned e)
+        {
+        }
+
+        private void OnOrderTotalsCalculated(OrderTotalsCalculated e)
         {
         }
 

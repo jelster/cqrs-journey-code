@@ -20,21 +20,28 @@ namespace Conference
     using System.Linq;
     using Infrastructure.Messaging;
 
+    /// <summary>
+    /// Transaction-script style domain service that manages 
+    /// the interaction between the MVC controller and the 
+    /// ORM persistence, as well as the publishing of integration 
+    /// events.
+    /// </summary>
     public class ConferenceService
     {
-        // TODO: transactionally save to DB the outgoing events
-        // and an async process should pick and push to the bus.
-
-        // using (tx)
-        // {
-        //  DB save (state snapshot)
-        //  DB queue (events) -> push to bus (async)
-        // }
         private IEventBus eventBus;
         private string nameOrConnectionString;
 
         public ConferenceService(IEventBus eventBus, string nameOrConnectionString = "ConferenceManagement")
         {
+            // NOTE: the database storage cannot be transactionally consistent with the 
+            // event bus, so there is a chance that the conference state is saved 
+            // to the database but the events are not published. The recommended 
+            // mechanism to solve this lack of transaction support is to persist 
+            // failed events to a table in the same database as the conference, in a 
+            // queue that is retried until successfull delivery of events is 
+            // guaranteed. This mechamisn has been implemented for the AzureEventSourcedRepository
+            // and that implementation can be used as a guide to implement it here too.
+
             this.eventBus = eventBus;
             this.nameOrConnectionString = nameOrConnectionString;
         }
@@ -62,7 +69,7 @@ namespace Conference
             }
         }
 
-        public void CreateSeat(Guid conferenceId, SeatInfo seat)
+        public void CreateSeat(Guid conferenceId, SeatType seat)
         {
             using (var context = new ConferenceContext(this.nameOrConnectionString))
             {
@@ -93,7 +100,7 @@ namespace Conference
             }
         }
 
-        public IEnumerable<SeatInfo> FindSeats(Guid conferenceId)
+        public IEnumerable<SeatType> FindSeatTypes(Guid conferenceId)
         {
             using (var context = new ConferenceContext(this.nameOrConnectionString))
             {
@@ -101,15 +108,25 @@ namespace Conference
                     .Where(x => x.Id == conferenceId)
                     .Select(x => x.Seats)
                     .FirstOrDefault() ??
-                    Enumerable.Empty<SeatInfo>();
+                    Enumerable.Empty<SeatType>();
             }
         }
 
-        public SeatInfo FindSeat(Guid seatId)
+        public SeatType FindSeatType(Guid seatTypeId)
         {
             using (var context = new ConferenceContext(this.nameOrConnectionString))
             {
-                return context.Seats.Find(seatId);
+                return context.Seats.Find(seatTypeId);
+            }
+        }
+
+        public IEnumerable<Order> FindOrders(Guid conferenceId)
+        {
+            using (var context = new ConferenceContext(this.nameOrConnectionString))
+            {
+                return context.Orders.Include("Seats.SeatInfo")
+                    .Where(x => x.ConferenceId == conferenceId)
+                    .ToList();
             }
         }
 
@@ -128,7 +145,7 @@ namespace Conference
             }
         }
 
-        public void UpdateSeat(Guid conferenceId, SeatInfo seat)
+        public void UpdateSeat(Guid conferenceId, SeatType seat)
         {
             using (var context = new ConferenceContext(this.nameOrConnectionString))
             {
@@ -136,34 +153,17 @@ namespace Conference
                 if (existing == null)
                     throw new ObjectNotFoundException();
 
-                var diff = seat.Quantity - existing.Quantity;
-                var e = diff > 0 ?
-                    (IEvent)new SeatsAdded
-                    {
-                        ConferenceId = conferenceId,
-                        SourceId = seat.Id,
-                        AddedQuantity = diff,
-                        TotalQuantity = seat.Quantity
-                    } :
-                    (IEvent)new SeatsRemoved
-                    {
-                        ConferenceId = conferenceId,
-                        SourceId = seat.Id,
-                        RemovedQuantity = Math.Abs(diff),
-                        TotalQuantity = seat.Quantity
-                    };
-
                 context.Entry(existing).CurrentValues.SetValues(seat);
                 context.SaveChanges();
 
-                this.eventBus.Publish(e);
                 this.eventBus.Publish(new SeatUpdated
                 {
                     ConferenceId = conferenceId,
                     SourceId = seat.Id,
                     Name = seat.Name,
                     Description = seat.Description,
-                    Price = seat.Price
+                    Price = seat.Price,
+                    Quantity = seat.Quantity,
                 });
             }
         }
@@ -224,7 +224,6 @@ namespace Conference
         private void PublishConferenceEvent<T>(ConferenceInfo conference)
             where T : ConferenceEvent, new()
         {
-            // TODO: replace with AutoMapper one-liner
             this.eventBus.Publish(new T()
             {
                 SourceId = conference.Id,
@@ -235,15 +234,17 @@ namespace Conference
                 },
                 Name = conference.Name,
                 Description = conference.Description,
+                Location = conference.Location,
                 Slug = conference.Slug,
+                Tagline = conference.Tagline,
+                TwitterSearch = conference.TwitterSearch,
                 StartDate = conference.StartDate,
                 EndDate = conference.EndDate,
             });
         }
 
-        private void PublishSeatCreated(Guid conferenceId, SeatInfo seat)
+        private void PublishSeatCreated(Guid conferenceId, SeatType seat)
         {
-            // TODO: replace with AutoMapper one-liner
             this.eventBus.Publish(new SeatCreated
             {
                 ConferenceId = conferenceId,
@@ -251,13 +252,7 @@ namespace Conference
                 Name = seat.Name,
                 Description = seat.Description,
                 Price = seat.Price,
-            });
-            this.eventBus.Publish(new SeatsAdded
-            {
-                ConferenceId = conferenceId,
-                SourceId = seat.Id,
-                AddedQuantity = seat.Quantity,
-                TotalQuantity = seat.Quantity,
+                Quantity = seat.Quantity,
             });
         }
     }

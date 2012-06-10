@@ -3,6 +3,22 @@
 
 http://cqrsjourney.github.com
 
+# Release Notes
+
+_4th May 2012_
+
+You can find the release notes that apply to the Pseudo-Production
+Release (V1) of the Contoso Conference Management System [here][releasenotes].
+
+The release notes include information about:
+
+* How to obtain the source code.
+* How to configure the application.
+* How to build the application.
+* How to run the application.
+* How to run the tests.
+* Known issues.
+
 # Contribution Guidelines Overview
 
 If you would like to become involved in the development of the CQRS Journey sample application and guidance, you can contribute in many different ways:
@@ -131,7 +147,7 @@ Before you start working on bug fixes and features it is good idea to discuss th
 
 Before submitting your changes make sure you followed the guidelines below:
 
-* For every new code file, include the file header with license information that is included in all other files (see [https://github.com/mspnp/cqrs-journey-code/blob/dev/source/Conference/..\CQRS-journey.licenseheader](https://github.com/mspnp/cqrs-journey-code/blob/dev/source/CQRS-journey.licenseheader), for example).
+* For every new code file, include the file header with license information that is included in all other files (see [https://github.com/mspnp/cqrs-journey-code/blob/dev/source/CQRS-journey.licenseheader](https://github.com/mspnp/cqrs-journey-code/blob/dev/source/CQRS-journey.licenseheader), for example).
 * You have properly documented any new functionality using the documentation standards for the language (this includes classes, methods and functions, properties etc.). For any change you make proper inline documentation is included.
 * For any new functionality or updates, you have written complete unit tests.
 * You have run all unit tests and they pass.
@@ -148,7 +164,7 @@ In order to speed up the process of accepting your contributions, you should try
 
 In order to become a contributor to the project you must sign the Contributor License Agreement (CLA). Signing the Contributor License Agreement (CLA) does not grant you rights to commit to the source code or doc repositories but it does mean that we will consider your contributions and you will get credit for them if we use them. 
 
-You can download the Contributor License Agreement (CLA) by clicking at the following link: [http://cqrsjourney.github.com/docs/Contribution%20License%20 Agreement.pdf](http://cqrsjourney.github.com/docs/Contribution%20License%20 Agreement.pdf). Please fill in, sign, scan and email it to [cla@microsoft.com](mailto:cla@microsoft.com).
+You can download the Contributor License Agreement (CLA) by clicking at the following link: [http://cqrsjourney.github.com/docs/Contribution%20License%20Agreement.pdf](http://cqrsjourney.github.com/docs/Contribution%20License%20Agreement.pdf). Please fill in, sign, scan and email it to [cla@microsoft.com](mailto:cla@microsoft.com).
 
 You do not need to sign a separate agreement if you have already submitted one to contribute to the project's source code or to other Microsoft OSS projects (such as Windows Azure SDK) and if your employer hasn't changed.
 
@@ -213,3 +229,5 @@ An easy way to review the docs and comment on them (without using Git, GitHub, o
 ##Inquiries
 
 For any further inquiries, contact the project leader, Grigori Melnik, at _grigori dot melnik at microsoft dot com_
+
+[releasenotes]: https://github.com/mspnp/cqrs-journey-doc/blob/master/Appendix1_Running.markdown

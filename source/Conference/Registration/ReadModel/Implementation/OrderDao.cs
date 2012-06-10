@@ -15,31 +15,30 @@ namespace Registration.ReadModel.Implementation
 {
     using System;
     using System.Data.Entity;
+    using System.IO;
     using System.Linq;
+    using Infrastructure.BlobStorage;
+    using Infrastructure.Serialization;
 
     public class OrderDao : IOrderDao
     {
         private readonly Func<ConferenceRegistrationDbContext> contextFactory;
+        private IBlobStorage blobStorage;
+        private ITextSerializer serializer;
 
-        public OrderDao(Func<ConferenceRegistrationDbContext> contextFactory)
+        public OrderDao(Func<ConferenceRegistrationDbContext> contextFactory, IBlobStorage blobStorage, ITextSerializer serializer)
         {
             this.contextFactory = contextFactory;
-        }
-
-        public OrderDTO GetOrderDetails(Guid orderId)
-        {
-            using (var repository = this.contextFactory.Invoke())
-            {
-                return repository.Query<OrderDTO>().Include("Lines").Where(dto => dto.OrderId == orderId).FirstOrDefault();
-            }
+            this.blobStorage = blobStorage;
+            this.serializer = serializer;
         }
 
         public Guid? LocateOrder(string email, string accessCode)
         {
-            using (var repository = this.contextFactory.Invoke())
+            using (var context = this.contextFactory.Invoke())
             {
-                var orderProjection = repository
-                    .Query<OrderDTO>()
+                var orderProjection = context
+                    .Query<DraftOrder>()
                     .Where(o => o.RegistrantEmail == email && o.AccessCode == accessCode)
                     .Select(o => new { o.OrderId })
                     .FirstOrDefault();
@@ -50,6 +49,35 @@ namespace Registration.ReadModel.Implementation
                 }
 
                 return null;
+            }
+        }
+
+        public DraftOrder FindDraftOrder(Guid orderId)
+        {
+            using (var context = this.contextFactory.Invoke())
+            {
+                return context.Query<DraftOrder>().Include(x => x.Lines).FirstOrDefault(dto => dto.OrderId == orderId);
+            }
+        }
+
+        public PricedOrder FindPricedOrder(Guid orderId)
+        {
+            using (var context = this.contextFactory.Invoke())
+            {
+                return context.Query<PricedOrder>().Include(x => x.Lines).FirstOrDefault(dto => dto.OrderId == orderId);
+            }
+        }
+
+        public OrderSeats FindOrderSeats(Guid assignmentsId)
+        {
+            var blob = this.blobStorage.Find("SeatAssignments-" + assignmentsId);
+            if (blob == null)
+                return null;
+
+            using (var stream = new MemoryStream(blob))
+            using (var reader = new StreamReader(stream))
+            {
+                return (OrderSeats)this.serializer.Deserialize(reader);
             }
         }
     }
